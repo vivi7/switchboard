@@ -283,8 +283,246 @@ async function fileDiff(dir, filePath) {
   return { path: relative, diff, truncated };
 }
 
+// --- Git Graph read functions ---------------------------------------------
+// Everything below is read-only (git-actions.js is where mutation lives).
+// Every call adds --no-optional-locks (never contend with a write in
+// flight elsewhere) and, for anything that formats human-readable output,
+// --no-color/--no-show-signature, so a user's own color.ui=always or a
+// slow/missing gpg can never leak into text this code goes on to parse.
+// Multi-field
+// records use NUL between fields and, for git-log output, \x1e between
+// records, the same convention parseCommits() already uses above.
+
+async function tagExists(repo, name) {
+  try {
+    await run(['--no-optional-locks', 'rev-parse', '--verify', '--quiet', `refs/tags/${name}`], repo);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Normalize a path for use inside a git argv element (git wants '/' even on Windows). */
+function toGitPath(relPath) {
+  return String(relPath).split(path.sep).join('/').split('\\').join('/');
+}
+
+// Node's execFile refuses any argv string containing an actual NUL byte
+// ("must be a string without null bytes") — so the *format strings* below
+// use git's own textual escape for one (`%x00` for git-log/stash-list's
+// pretty-format engine, `%00` for for-each-ref's own, different, format
+// language), and only the *parsed output* (which genuinely does contain
+// raw NUL/RS bytes, written by git itself, safe for Node to read back) is
+// split on the real characters.
+const GG_FIELD_SEP = '\x00';
+const GG_RECORD_SEP = '\x1e';
+const LOG_FIELD_ESCAPE = '%x00';
+const LOG_RECORD_ESCAPE = '%x1e';
+const FOR_EACH_REF_FIELD_ESCAPE = '%00';
+
+const LOG_ORDER_FLAGS = { date: '--date-order', 'author-date': '--author-date-order', topo: '--topo-order' };
+
+// A revspec entry starting with '-' is only ever accepted from this fixed
+// list (or one of the prefixes below) — anything else risks being read as
+// a flag rather than a ref/branch-glob, the same class of bug git-actions.js
+// closes for mutating commands with assertSafePositionalArg.
+const REVSPEC_FLAGS = new Set(['--all', '--branches', '--tags', '--remotes', '--first-parent', '--reflog']);
+const REVSPEC_FLAG_PREFIXES = ['--glob=', '--branches=', '--tags=', '--remotes=', '--exclude='];
+
+function assertSafeRevspecEntry(entry) {
+  if (typeof entry !== 'string' || !entry || entry.includes('\0')) throw new Error('Invalid revision specifier');
+  if (!entry.startsWith('-')) return entry;
+  if (REVSPEC_FLAGS.has(entry) || REVSPEC_FLAG_PREFIXES.some(prefix => entry.startsWith(prefix))) return entry;
+  throw new Error(`Revision specifier '${entry}' is not on the allowed flag list`);
+}
+
+function logPrettyFormat(useMailmap) {
+  const an = useMailmap ? '%aN' : '%an';
+  const ae = useMailmap ? '%aE' : '%ae';
+  const cn = useMailmap ? '%cN' : '%cn';
+  const ce = useMailmap ? '%cE' : '%ce';
+  return ['%H', '%h', '%P', an, ae, '%aI', cn, ce, '%cI', '%s'].join(LOG_FIELD_ESCAPE) + LOG_RECORD_ESCAPE;
+}
+
+function parseLogWithParents(output) {
+  return String(output || '')
+    .split(GG_RECORD_SEP)
+    .map(record => record.replace(/^\n+|\n+$/g, ''))
+    .filter(Boolean)
+    .map((record) => {
+      const [hash, shortHash, parentField, authorName, authorEmail, authorDate,
+        committerName, committerEmail, commitDate, subject] = record.split(GG_FIELD_SEP);
+      return {
+        hash, shortHash,
+        parents: parentField ? parentField.split(' ').filter(Boolean) : [],
+        authorName, authorEmail, authorDate,
+        committerName, committerEmail, commitDate,
+        subject: subject || '',
+      };
+    });
+}
+
+/**
+ * Commit list with parent hashes, for graph layout. `order` selects
+ * `--date-order` (default) / `--author-date-order` / `--topo-order`.
+ * `revspec` is a ref/hash or array of them (default `['HEAD']`); a leading
+ * '-' entry must be on the fixed allow-list above. `useMailmap` swaps the
+ * author/committer placeholders for their mailmap-aware forms — %an/%ae
+ * never consult .mailmap regardless, so this is a format-string choice, not
+ * a flag. Degrades to `[]` on an unborn HEAD rather than throwing.
+ */
+async function logWithParents(dir, { revspec, order = 'date', skip, limit, useMailmap = false } = {}) {
+  const orderFlag = LOG_ORDER_FLAGS[order] || LOG_ORDER_FLAGS.date;
+  const revArgs = [].concat(revspec == null ? ['HEAD'] : revspec).map(assertSafeRevspecEntry);
+  const args = ['--no-optional-locks', 'log', '--no-color', '--no-show-signature', orderFlag];
+  if (Number(skip) > 0) args.push(`--skip=${Math.floor(Number(skip))}`);
+  if (Number(limit) > 0) args.push(`--max-count=${Math.floor(Number(limit))}`);
+  args.push(`--pretty=format:${logPrettyFormat(useMailmap)}`, ...revArgs);
+  return parseLogWithParents(await runOr(args, dir, ''));
+}
+
+const FOR_EACH_REF_FORMAT = ['%(HEAD)', '%(refname)', '%(objectname)', '%(*objectname)', '%(objecttype)', '%(upstream)'].join(FOR_EACH_REF_FIELD_ESCAPE);
+
+/**
+ * Local branches, remote-tracking branches, and tags, via `for-each-ref`.
+ * Each head carries `isHead` (this is "which head is HEAD" — an addition
+ * beyond the plan's minimal {name,hash,upstream} so that fact isn't lost).
+ * Degrades to empty arrays on a repo with no refs at all rather than throwing.
+ */
+async function forEachRef(dir) {
+  const output = await runOr(['--no-optional-locks', 'for-each-ref', '--no-color', `--format=${FOR_EACH_REF_FORMAT}`,
+    'refs/heads', 'refs/remotes', 'refs/tags'], dir, '');
+  const heads = [];
+  const remotes = [];
+  const tags = [];
+  for (const line of String(output).split('\n')) {
+    if (!line) continue;
+    const [headMarker, refname, objectName, peeledObjectName, objectType, upstream] = line.split(GG_FIELD_SEP);
+    if (refname.startsWith('refs/heads/')) {
+      heads.push({
+        name: refname.slice('refs/heads/'.length),
+        hash: objectName,
+        isHead: headMarker === '*',
+        upstream: upstream ? upstream.replace(/^refs\/remotes\//, '') : null,
+      });
+    } else if (refname.startsWith('refs/remotes/')) {
+      const rest = refname.slice('refs/remotes/'.length);
+      const slash = rest.indexOf('/');
+      if (slash === -1) continue;
+      const name = rest.slice(slash + 1);
+      if (name === 'HEAD') continue; // the remote's own default-branch pointer, not a real branch
+      remotes.push({ remote: rest.slice(0, slash), name, hash: objectName });
+    } else if (refname.startsWith('refs/tags/')) {
+      const annotated = objectType === 'tag';
+      tags.push({ name: refname.slice('refs/tags/'.length), hash: annotated ? (peeledObjectName || objectName) : objectName, annotated });
+    }
+  }
+  return { heads, remotes, tags };
+}
+
+const STASH_FORMAT = ['%H', '%gd', '%gs', '%aI'].join(LOG_FIELD_ESCAPE);
+const STASH_MESSAGE_BRANCH_RE = /^(?:WIP on|On) (.+):/;
+
+/**
+ * Stashes, each with `baseCommitHash` — the commit it was taken from,
+ * resolved as `<stashHash>^1` (its own first parent) so a stash can be laid
+ * into the graph as a pseudo-commit attached to that commit.
+ */
+async function stashList(dir) {
+  const output = await runOr(['--no-optional-locks', 'stash', 'list', '--no-color', `--format=${STASH_FORMAT}`], dir, '');
+  const entries = String(output).split('\n').filter(Boolean).map((line) => {
+    const [hash, gd, message, date] = line.split(GG_FIELD_SEP);
+    const indexMatch = /stash@\{(\d+)\}/.exec(gd || '');
+    const branchMatch = STASH_MESSAGE_BRANCH_RE.exec(message || '');
+    return { hash, index: indexMatch ? Number(indexMatch[1]) : null, branch: branchMatch ? branchMatch[1] : null, message: message || '', date };
+  });
+  const bases = await Promise.all(entries.map(entry => runOr(['--no-optional-locks', 'rev-parse', `${entry.hash}^1`], dir, '')));
+  return entries.map((entry, i) => ({ ...entry, baseCommitHash: bases[i].trim() || null }));
+}
+
+const REMOTE_V_LINE_RE = /^(\S+)\t(.+) \((fetch|push)\)$/;
+
+/** Configured remotes, with distinct fetch/push URLs when they differ. */
+async function remoteList(dir) {
+  const output = await runOr(['--no-optional-locks', 'remote', '-v'], dir, '');
+  const byName = new Map();
+  for (const line of String(output).split('\n')) {
+    const match = REMOTE_V_LINE_RE.exec(line);
+    if (!match) continue;
+    const [, name, url, kind] = match;
+    const entry = byName.get(name) || { name, url: null, pushUrl: null };
+    if (kind === 'fetch') entry.url = url; else entry.pushUrl = url;
+    byName.set(name, entry);
+  }
+  return [...byName.values()].map(entry => ({ ...entry, pushUrl: entry.pushUrl || entry.url }));
+}
+
+/** Effective config across all scopes with [include]/[includeIf] expanded, as {key, value} pairs. */
+async function configListIncludes(dir) {
+  const output = await runOr(['--no-optional-locks', 'config', '--list', '--includes', '-z'], dir, '');
+  return String(output).split('\0').filter(Boolean).map((entry) => {
+    const nl = entry.indexOf('\n');
+    return nl === -1 ? { key: entry, value: '' } : { key: entry.slice(0, nl), value: entry.slice(nl + 1) };
+  });
+}
+
+/**
+ * File content at a revision (a blob, via `git show <rev>:<path>`), for the
+ * diff viewer. `--no-textconv` so a repo's own .gitattributes filter can't
+ * substitute different bytes than what's actually stored. `relPath` goes
+ * through the same containment check as fileDiff(), then is normalized to
+ * '/'-separated (git's pathspec syntax wants that even on Windows).
+ */
+async function blobAtRevision(dir, rev, relPath) {
+  if (typeof rev !== 'string' || !rev || rev.includes('\0') || rev.startsWith('-')) throw new Error('Invalid revision');
+  const { relative } = safeRelativePath(dir, relPath);
+  return runRaw(['--no-optional-locks', 'show', '--no-color', '--no-textconv', `${rev}:${toGitPath(relative)}`], dir);
+}
+
+/** Whether dir is a shallow clone (`git clone --depth=N`). */
+async function isShallowRepo(dir) {
+  return (await run(['--no-optional-locks', 'rev-parse', '--is-shallow-repository'], dir)) === 'true';
+}
+
+/** The repo's root commit hash(es) — a cheap repo-identity signal (a path can be reused by a
+ * different repo across a worktree remove/add cycle). Degrades to [] on an unborn HEAD. */
+async function rootCommitHashes(dir) {
+  const output = await runOr(['--no-optional-locks', 'rev-list', '--max-parents=0', 'HEAD'], dir, '');
+  return String(output).split(/\s+/).filter(Boolean);
+}
+
+/**
+ * The repository's committer identity at the local (this repo only) and
+ * global (this user, every repo) config scopes, read separately and never
+ * merged — `--local`/`--global` each report exactly what's set at that one
+ * scope, unlike a plain `git config user.name` (or configListIncludes()'s
+ * effective, --includes-expanded view used elsewhere) which would silently
+ * fall back through global/system config and hide whether a local override
+ * even exists. A scope with nothing set reads back as null, not an error
+ * (`git config --get` exits 1 for a missing key, which runOr's fallback
+ * already treats as "no value").
+ */
+async function userDetails(dir) {
+  const readOne = async (scope, key) => {
+    const value = await runOr(['--no-optional-locks', 'config', `--${scope}`, '--get', key], dir, '');
+    const trimmed = value.trim();
+    return trimmed || null;
+  };
+  const [localName, localEmail, globalName, globalEmail] = await Promise.all([
+    readOne('local', 'user.name'), readOne('local', 'user.email'),
+    readOne('global', 'user.name'), readOne('global', 'user.email'),
+  ]);
+  return {
+    local: { name: localName, email: localEmail },
+    global: { name: globalName, email: globalEmail },
+  };
+}
+
 module.exports = {
   run, version, isGitRepo, repoRoot, branchExists,
   worktreeAdd, worktreeRemove, isDirtyWorktreeError, gitCommonDir, status,
   parsePorcelain, snapshot, fileDiff,
+  tagExists, toGitPath, safeRelativePath,
+  logWithParents, forEachRef, stashList, remoteList, configListIncludes,
+  blobAtRevision, isShallowRepo, rootCommitHashes, userDetails,
 };
