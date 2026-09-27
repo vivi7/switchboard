@@ -304,6 +304,26 @@ projects.init({
   isHarnessId: (id) => allHarnesses().some(h => h.id === id),
   plansDir: PLANS_DIR,
 });
+// --- Git Graph tab: service + SSRF-safe avatar cache ---
+const gitGraphService = require('./git-graph-service');
+const gitGraphAvatars = require('./git-graph-avatars');
+// Mirrors db.js's own DATA_DIR resolution (SWITCHBOARD_DATA_DIR override,
+// else ~/.switchboard) without depending on db.js's internals.
+const GIT_GRAPH_DATA_DIR = process.env.SWITCHBOARD_DATA_DIR
+  ? path.resolve(process.env.SWITCHBOARD_DATA_DIR)
+  : path.join(os.homedir(), '.switchboard');
+gitGraphAvatars.init({
+  dataDir: path.join(GIT_GRAPH_DATA_DIR, 'git-graph-avatars'),
+  log,
+});
+gitGraphService.init({
+  db: dbModule,
+  log,
+  send: (channel, ...args) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, ...args);
+  },
+});
+
 // An upgrade can change the working rules in the brief. Bring every project's
 // managed blocks up to date once at startup; unchanged files are not written.
 projects.syncAllProjectBriefs().catch(err => log.error('[projects] brief sync failed:', err?.message || String(err)));
@@ -470,6 +490,71 @@ ipcMain.handle('get-project-git-status', guarded((id, opts) => projects.folderGi
 ipcMain.handle('get-project-git-info', guarded((id) => projects.projectGitInfo(id)));
 ipcMain.handle('get-project-git-diff', guarded((id, folderPath, filePath) => projects.projectGitDiff(id, folderPath, filePath)));
 ipcMain.handle('get-folder-git-status', guarded((folderPath) => projects.folderGitInfo(String(folderPath || ''))));
+
+// --- IPC: Git Graph tab ---
+// Every handler delegates one line into projects.js, same shape as the four
+// git handlers above; projects.js re-checks the attached-folder boundary.
+ipcMain.handle('get-project-git-graph', guarded((id, folderPath, opts) => projects.projectGitGraph(id, String(folderPath || ''), opts || {})));
+ipcMain.handle('get-git-graph-commit-detail', guarded((id, folderPath, hash) => projects.projectGitGraphCommitDetail(id, String(folderPath || ''), hash)));
+ipcMain.handle('get-git-graph-compare-detail', guarded((id, folderPath, fromHash, toHash) => projects.projectGitGraphCompareDetail(id, String(folderPath || ''), fromHash, toHash)));
+ipcMain.handle('get-git-graph-file-at-revision', guarded((id, folderPath, rev, filePath) => projects.projectGitGraphFileAtRevision(id, String(folderPath || ''), rev, filePath)));
+ipcMain.handle('get-git-graph-file-diff-between', guarded((id, folderPath, fromRev, toRevOrNull, filePath) => projects.projectGitGraphFileDiffBetween(id, String(folderPath || ''), fromRev, toRevOrNull, filePath)));
+ipcMain.handle('get-git-graph-repo-config', guarded((id, folderPath) => projects.projectGitGraphRepoConfig(id, String(folderPath || ''))));
+ipcMain.handle('set-git-graph-repo-config', guarded((id, folderPath, patch) => projects.setProjectGitGraphRepoConfig(id, String(folderPath || ''), patch || {})));
+ipcMain.handle('trust-git-graph-repo-config', guarded((id, folderPath, trusted) => projects.trustProjectGitGraphRepoConfig(id, String(folderPath || ''), !!trusted)));
+// avatarsSelfHostedGitLabHost sends this repo's commit-author email
+// addresses to whatever host it names, so — unlike every other repo setting,
+// which round-trips through the generic set-git-graph-repo-config channel —
+// it is only ever written after a real dialog, shown by this process and
+// naming the exact host, that the renderer cannot fake or skip.
+ipcMain.handle('confirm-git-graph-avatars-gitlab-host', guarded(async (id, folderPath, host) => {
+  if (host !== null && typeof host === 'string' && host.trim()) {
+    const choice = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['Cancel', 'Confirm'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Confirm Self-Hosted GitLab Host',
+      message: `Send this repository's commit author email addresses to "${host}" for avatar lookup?`,
+      detail: 'Only confirm this for a self-hosted GitLab instance you trust — every avatar lookup for this repository will contact this host from now on.',
+    });
+    if (choice.response !== 1) return { cancelled: true };
+  }
+  return projects.setProjectGitGraphAvatarsSelfHostedGitLabHost(id, String(folderPath || ''), host || null);
+}));
+ipcMain.handle('export-git-graph-repo-config', guarded((id, folderPath) => projects.exportProjectGitGraphRepoConfig(id, String(folderPath || ''))));
+ipcMain.handle('get-git-graph-user-details', guarded((id, folderPath) => projects.projectGitGraphUserDetails(id, String(folderPath || ''))));
+ipcMain.handle('get-git-graph-global-preferences', guarded(() => gitGraphService.getGitGraphGlobalPreferences()));
+ipcMain.handle('set-git-graph-global-preferences', guarded((patch) => gitGraphService.setGitGraphGlobalPreferences(patch || {})));
+ipcMain.handle('get-git-graph-remotes', guarded((id, folderPath) => projects.projectGitGraphRemotes(id, String(folderPath || ''))));
+ipcMain.handle('get-git-graph-tag-details', guarded((id, folderPath, tagName) => projects.projectGitGraphTagDetails(id, String(folderPath || ''), tagName)));
+ipcMain.handle('get-git-graph-avatar-url', guarded((id, folderPath, email) => projects.projectGitGraphAvatarUrl(id, String(folderPath || ''), email)));
+ipcMain.handle('clear-git-graph-avatar-cache', guarded(() => gitGraphAvatars.clearCache()));
+// The single generic whitelisted-action dispatcher — actionId is
+// looked up in git-actions.js's ACTIONS table, never a dynamic property/
+// function-name lookup off the renderer's string.
+ipcMain.handle('run-git-graph-action', guarded((id, folderPath, actionId, params) => projects.runProjectGitGraphAction(id, String(folderPath || ''), String(actionId || ''), params || {})));
+ipcMain.handle('cancel-git-graph-action', guarded((id, folderPath, actionId) => projects.cancelProjectGitGraphAction(id, String(folderPath || ''), String(actionId || ''))));
+// Create Archive's destination is never taken from the renderer: this shows
+// the real native Save dialog itself and only ever hands createArchive the
+// path *it* returned, the same way any other "Save As" in the app works —
+// the renderer only supplies the ref being archived and a suggested filename.
+ipcMain.handle('save-git-graph-archive', guarded(async (id, folderPath, opts = {}) => {
+  const suggestedName = String(opts.suggestedName || 'archive').replace(/[\\/]/g, '-');
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Create Archive',
+    defaultPath: `${suggestedName}.zip`,
+    filters: [
+      { name: 'Zip Archive', extensions: ['zip'] },
+      { name: 'Tar Archive', extensions: ['tar'] },
+    ],
+  });
+  if (result.canceled || !result.filePath) return { cancelled: true };
+  const format = path.extname(result.filePath).toLowerCase() === '.tar' ? 'tar' : 'zip';
+  return projects.runProjectGitGraphAction(id, String(folderPath || ''), 'createArchive', {
+    ref: opts.ref, refType: opts.refType, remote: opts.remote, format, absPath: result.filePath,
+  });
+}));
 // The .env files a folder has, and the ones the dialog ticks by default,
 // so a new worktree can be offered its repository's local environment.
 ipcMain.handle('list-env-files', guarded((folderPath) => ({

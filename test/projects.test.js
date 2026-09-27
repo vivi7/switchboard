@@ -1343,3 +1343,154 @@ test('legacy omitted options preserve old defaults and invalid settings retry in
     assert.equal(projects.importLegacySchedules([bad, defaults]), 1, 'fixed files can be retried');
   } finally { t.cleanup(); }
 });
+
+// --- Git Graph tab: boundary check + delegation into git-graph-service.js ---
+
+const gitGraphService = require('../git-graph-service');
+const realGit = require('../git');
+
+function initGitGraphServiceFor(t) {
+  gitGraphService.init({ db: t.db, log: { info() {}, error() {} }, git: realGit });
+}
+
+test('every new Git Graph projects.js wrapper rejects a folderPath not attached to the project', { skip: !haveGit && 'git not installed' }, async () => {
+  const t = setup();
+  const repo = makeRepo();
+  const other = makeRepo('switchboard-other-repo-');
+  initGitGraphServiceFor(t);
+  try {
+    const created = await projects.createProject({ name: 'Git Graph boundary', folders: [{ path: repo, mode: 'in-place' }] });
+    const id = created.project.id;
+
+    const calls = [
+      () => projects.projectGitGraph(id, other, {}),
+      () => projects.projectGitGraphCommitDetail(id, other, 'deadbeef'),
+      () => projects.projectGitGraphCompareDetail(id, other, 'deadbeef', 'beefdead'),
+      () => projects.projectGitGraphFileAtRevision(id, other, 'HEAD', 'README.md'),
+      () => projects.projectGitGraphFileDiffBetween(id, other, 'HEAD', null, 'README.md'),
+      () => projects.projectGitGraphRepoConfig(id, other),
+      () => projects.setProjectGitGraphRepoConfig(id, other, { showTags: false }),
+      () => projects.trustProjectGitGraphRepoConfig(id, other, true),
+      () => projects.projectGitGraphRemotes(id, other),
+      () => projects.projectGitGraphTagDetails(id, other, 'v1'),
+      () => projects.projectGitGraphAvatarUrl(id, other, 'a@b.com'),
+      () => projects.runProjectGitGraphAction(id, other, 'addTag', {}),
+      async () => projects.cancelProjectGitGraphAction(id, other, 'addTag'), // sync throw; async wrapper turns it into a rejection
+      () => projects.exportProjectGitGraphRepoConfig(id, other),
+      () => projects.projectGitGraphUserDetails(id, other),
+    ];
+    for (const call of calls) {
+      await assert.rejects(call(), /not attached/, `${call} should reject a folderPath not attached to the project`);
+    }
+  } finally {
+    rm(other);
+    rm(repo);
+    t.cleanup();
+  }
+});
+
+test('projectGitGraph delegates to git-graph-service for an attached repository and returns real commits', { skip: !haveGit && 'git not installed' }, async () => {
+  const t = setup();
+  const repo = makeRepo();
+  initGitGraphServiceFor(t);
+  try {
+    const created = await projects.createProject({ name: 'Git Graph delegation', folders: [{ path: repo, mode: 'in-place' }] });
+    const result = await projects.projectGitGraph(created.project.id, repo, { limit: 10 });
+    assert.equal(result.ok, true);
+    assert.ok(result.commits.some(c => c.subject === 'init'));
+  } finally {
+    rm(repo);
+    t.cleanup();
+  }
+});
+
+test('projectGitGraphRepoConfig/setProjectGitGraphRepoConfig persist through the same db as the rest of projects.js', { skip: !haveGit && 'git not installed' }, async () => {
+  const t = setup();
+  const repo = makeRepo();
+  initGitGraphServiceFor(t);
+  try {
+    const created = await projects.createProject({ name: 'Git Graph config', folders: [{ path: repo, mode: 'in-place' }] });
+    const id = created.project.id;
+    const before = await projects.projectGitGraphRepoConfig(id, repo);
+    assert.equal(before.config.customDisplayName, null);
+
+    await projects.setProjectGitGraphRepoConfig(id, repo, { customDisplayName: 'My repo' });
+    const after = await projects.projectGitGraphRepoConfig(id, repo);
+    assert.equal(after.config.customDisplayName, 'My repo');
+  } finally {
+    rm(repo);
+    t.cleanup();
+  }
+});
+
+test('setProjectGitGraphRepoConfig propagates git-graph-service\'s unknown-field rejection through the boundary wrapper', { skip: !haveGit && 'git not installed' }, async () => {
+  const t = setup();
+  const repo = makeRepo();
+  initGitGraphServiceFor(t);
+  try {
+    const created = await projects.createProject({ name: 'Git Graph unknown field', folders: [{ path: repo, mode: 'in-place' }] });
+    await assert.rejects(
+      projects.setProjectGitGraphRepoConfig(created.project.id, repo, { thisFieldDoesNotExist: true }),
+      /Unknown Git Graph repository setting/,
+    );
+  } finally {
+    rm(repo);
+    t.cleanup();
+  }
+});
+
+test('exportProjectGitGraphRepoConfig writes .switchboard-git-graph.json at the attached repo\'s root', { skip: !haveGit && 'git not installed' }, async () => {
+  const t = setup();
+  const repo = makeRepo();
+  initGitGraphServiceFor(t);
+  try {
+    const created = await projects.createProject({ name: 'Git Graph export', folders: [{ path: repo, mode: 'in-place' }] });
+    const id = created.project.id;
+    await projects.setProjectGitGraphRepoConfig(id, repo, { customDisplayName: 'Exported repo' });
+
+    const { ok, path: written } = await projects.exportProjectGitGraphRepoConfig(id, repo);
+    assert.equal(ok, true);
+    assert.equal(written, path.join(repo, '.switchboard-git-graph.json'));
+    const onDisk = JSON.parse(fs.readFileSync(written, 'utf8'));
+    assert.equal(onDisk.customDisplayName, 'Exported repo');
+  } finally {
+    rm(repo);
+    t.cleanup();
+  }
+});
+
+test('projectGitGraphUserDetails reads the attached repo\'s local git identity', { skip: !haveGit && 'git not installed' }, async () => {
+  const t = setup();
+  const repo = makeRepo();
+  initGitGraphServiceFor(t);
+  try {
+    const created = await projects.createProject({ name: 'Git Graph user details', folders: [{ path: repo, mode: 'in-place' }] });
+    const { ok, details } = await projects.projectGitGraphUserDetails(created.project.id, repo);
+    assert.equal(ok, true);
+    assert.deepEqual(details.local, { name: 'Test', email: 'test@example.com' });
+  } finally {
+    rm(repo);
+    t.cleanup();
+  }
+});
+
+test('runProjectGitGraphAction dispatches through git-graph-service to a stubbed whitelisted action', { skip: !haveGit && 'git not installed' }, async () => {
+  const t = setup();
+  const repo = makeRepo();
+  gitGraphService.init({
+    db: t.db,
+    log: { info() {}, error() {} },
+    git: realGit,
+    gitActions: { ACTIONS: { noop: { run: async (dir, params) => ({ echoedDir: dir, echoedParams: params }) } } },
+  });
+  try {
+    const created = await projects.createProject({ name: 'Git Graph action', folders: [{ path: repo, mode: 'in-place' }] });
+    const result = await projects.runProjectGitGraphAction(created.project.id, repo, 'noop', { hello: 'world' });
+    assert.equal(result.ok, true);
+    assert.equal(result.echoedDir, repo);
+    assert.deepEqual(result.echoedParams, { hello: 'world' });
+  } finally {
+    rm(repo);
+    t.cleanup();
+  }
+});

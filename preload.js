@@ -60,6 +60,34 @@ contextBridge.exposeInMainWorld('api', {
   getProjectGitInfo: (id) => ipcRenderer.invoke('get-project-git-info', id),
   getProjectGitDiff: (id, folderPath, filePath) => ipcRenderer.invoke('get-project-git-diff', id, folderPath, filePath),
   getFolderGitStatus: (folderPath) => ipcRenderer.invoke('get-folder-git-status', folderPath),
+
+  // Git Graph tab
+  getProjectGitGraph: (id, folderPath, opts) => ipcRenderer.invoke('get-project-git-graph', id, folderPath, opts),
+  getGitGraphCommitDetail: (id, folderPath, hash) => ipcRenderer.invoke('get-git-graph-commit-detail', id, folderPath, hash),
+  getGitGraphCompareDetail: (id, folderPath, fromHash, toHash) => ipcRenderer.invoke('get-git-graph-compare-detail', id, folderPath, fromHash, toHash),
+  getGitGraphFileAtRevision: (id, folderPath, rev, filePath) => ipcRenderer.invoke('get-git-graph-file-at-revision', id, folderPath, rev, filePath),
+  getGitGraphFileDiffBetween: (id, folderPath, fromRev, toRevOrNull, filePath) => ipcRenderer.invoke('get-git-graph-file-diff-between', id, folderPath, fromRev, toRevOrNull, filePath),
+  getGitGraphRepoConfig: (id, folderPath) => ipcRenderer.invoke('get-git-graph-repo-config', id, folderPath),
+  setGitGraphRepoConfig: (id, folderPath, patch) => ipcRenderer.invoke('set-git-graph-repo-config', id, folderPath, patch),
+  trustGitGraphRepoConfig: (id, folderPath, trusted) => ipcRenderer.invoke('trust-git-graph-repo-config', id, folderPath, trusted),
+  exportGitGraphRepoConfig: (id, folderPath) => ipcRenderer.invoke('export-git-graph-repo-config', id, folderPath),
+  getGitGraphUserDetails: (id, folderPath) => ipcRenderer.invoke('get-git-graph-user-details', id, folderPath),
+  getGitGraphGlobalPreferences: () => ipcRenderer.invoke('get-git-graph-global-preferences'),
+  setGitGraphGlobalPreferences: (patch) => ipcRenderer.invoke('set-git-graph-global-preferences', patch),
+  getGitGraphRemotes: (id, folderPath) => ipcRenderer.invoke('get-git-graph-remotes', id, folderPath),
+  getGitGraphTagDetails: (id, folderPath, tagName) => ipcRenderer.invoke('get-git-graph-tag-details', id, folderPath, tagName),
+  getGitGraphAvatarUrl: (id, folderPath, email) => ipcRenderer.invoke('get-git-graph-avatar-url', id, folderPath, email),
+  clearGitGraphAvatarCache: () => ipcRenderer.invoke('clear-git-graph-avatar-cache'),
+  runGitGraphAction: (id, folderPath, actionId, params) => ipcRenderer.invoke('run-git-graph-action', id, folderPath, actionId, params),
+  cancelGitGraphAction: (id, folderPath, actionId) => ipcRenderer.invoke('cancel-git-graph-action', id, folderPath, actionId),
+  saveGitGraphArchive: (id, folderPath, opts) => ipcRenderer.invoke('save-git-graph-archive', id, folderPath, opts),
+  confirmGitGraphAvatarsGitLabHost: (id, folderPath, host) => ipcRenderer.invoke('confirm-git-graph-avatars-gitlab-host', id, folderPath, host),
+  onGitGraphRepoChanged: (callback) => {
+    ipcRenderer.on('git-graph-repo-changed', (_event, folderPath) => callback(folderPath));
+  },
+  onGitGraphActionProgress: (callback) => {
+    ipcRenderer.on('git-graph-action-progress', (_event, payload) => callback(payload));
+  },
   listEnvFiles: (folderPath) => ipcRenderer.invoke('list-env-files', folderPath),
   saveProjectBrief: (id, content) => ipcRenderer.invoke('save-project-brief', id, content),
   createProjectFile: (id, name, content) => ipcRenderer.invoke('create-project-file', id, name, content),
