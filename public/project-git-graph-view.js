@@ -36,6 +36,7 @@ function gitGraphState(projectId) {
       hasMore: false,
       loadingMore: false,
       branchSelection: 'all',
+      tagSelection: 'all',
       showRemoteBranches: true,
       order: 'date',
       firstParentOnly: false,
@@ -125,6 +126,7 @@ function gitGraphSaveUiPrefs(projectId, state) {
       columns: state.columns,
       columnWidths: state.columnWidths,
       branchSelection: state.branchSelection,
+      tagSelection: state.tagSelection,
       showRemoteBranches: state.showRemoteBranches,
       order: state.order,
       findOpen: state.findOpen,
@@ -432,6 +434,7 @@ function gitGraphLoadGraph(project, state, body, opts = {}) {
 
   return gitGraphApi('getProjectGitGraph', project.id, repo.path, {
     branches: state.branchSelection,
+    tags: state.tagSelection,
     order: state.order,
     limit,
     skip: state.skip,
@@ -500,6 +503,7 @@ function renderProjectGitGraphTab(project, body) {
     columns: prefs.columns || state.columns,
     columnWidths: prefs.columnWidths || state.columnWidths,
     branchSelection: prefs.branchSelection || state.branchSelection,
+    tagSelection: prefs.tagSelection || state.tagSelection,
     showRemoteBranches: prefs.showRemoteBranches !== undefined ? prefs.showRemoteBranches : state.showRemoteBranches,
     order: prefs.order || state.order,
     fileViewType: prefs.fileViewType || state.fileViewType,
@@ -641,13 +645,15 @@ function gitGraphControlBarHtml(project, state) {
     : Array.isArray(state.branchSelection) && state.branchSelection.length
       ? `${state.branchSelection.length} branch${state.branchSelection.length === 1 ? '' : 'es'}`
       : 'Show All';
+  const tagCount = Array.isArray(state.tagSelection) ? state.tagSelection.length : null;
+  const tagLabel = tagCount === null ? '' : ` · ${tagCount} tag${tagCount === 1 ? '' : 's'}`;
   return `
     <div class="gg-toolbar">
       <div class="gg-toolbar-left">
         <div class="gg-branches-dropdown">
-          <button type="button" class="gg-toolbar-btn" id="gg-branches-btn">${gitGraphIcon('branch', 13)}<span>Branches: ${escapeHtml(branchLabel)}</span>${gitGraphIcon('chevronDown', 10)}</button>
+          <button type="button" class="gg-toolbar-btn" id="gg-branches-btn">${gitGraphIcon('branch', 13)}<span>Branches: ${escapeHtml(branchLabel + tagLabel)}</span>${gitGraphIcon('chevronDown', 10)}</button>
         </div>
-        <label class="gg-checkbox"><input type="checkbox" id="gg-show-remote" ${state.showRemoteBranches ? 'checked' : ''}> Show Remote Branches</label>
+        <label class="gg-checkbox"><input type="checkbox" id="gg-show-remote" ${state.showRemoteBranches ? 'checked' : ''}> Show Remote</label>
       </div>
       <div class="gg-toolbar-right">
         <button type="button" class="gg-icon-btn" id="gg-find-btn" title="Find (Ctrl/Cmd+F)">${gitGraphIcon('search', 14)}</button>
@@ -710,14 +716,26 @@ function gitGraphOpenBranchesMenu(project, state, body, anchor) {
   if (!menu) return;
   if (state.branchesMenuCleanup) state.branchesMenuCleanup();
   state.branchesMenuOpen = true;
-  const heads = state.refs?.heads || [];
-  const remotes = state.showRemoteBranches ? gitGraphVisibleRemotes(state.refs?.remotes || [], state.repoConfig && state.repoConfig.perRemoteVisibility) : [];
-  const allNames = [...heads.map(h => h.name), ...remotes.map(r => `${r.remote}/${r.name}`)];
-  const selected = state.branchSelection === 'all' ? new Set(allNames) : new Set(state.branchSelection);
+  const tab = state.branchesMenuTab === 'tags' ? 'tags' : 'branches';
+  const selKey = tab === 'tags' ? 'tagSelection' : 'branchSelection';
+  let allNames;
+  if (tab === 'tags') {
+    allNames = (state.refs?.tags || []).map(t => t.name);
+  } else {
+    const heads = state.refs?.heads || [];
+    const remotes = state.showRemoteBranches ? gitGraphVisibleRemotes(state.refs?.remotes || [], state.repoConfig && state.repoConfig.perRemoteVisibility) : [];
+    allNames = [...heads.map(h => h.name), ...remotes.map(r => `${r.remote}/${r.name}`)];
+  }
+  const selection = state[selKey] || 'all';
+  const selected = selection === 'all' ? new Set(allNames) : new Set(selection);
   menu.innerHTML = `
-    <div class="gg-branches-search"><input type="text" id="gg-branches-filter" placeholder="Filter branches…"></div>
-    <label class="gg-branches-row gg-branches-show-all"><input type="checkbox" id="gg-branches-all" ${state.branchSelection === 'all' ? 'checked' : ''}> Show All</label>
-    <div class="gg-branches-list">${allNames.map(name => `<label class="gg-branches-row" data-name="${escapeAttr(name)}"><input type="checkbox" data-name="${escapeAttr(name)}" ${selected.has(name) ? 'checked' : ''}> ${escapeHtml(name)}</label>`).join('')}</div>`;
+    <div class="gg-branches-tabs">
+      <button type="button" class="gg-branches-tab ${tab === 'branches' ? 'active' : ''}" data-tab="branches">Branches</button>
+      <button type="button" class="gg-branches-tab ${tab === 'tags' ? 'active' : ''}" data-tab="tags">Tags</button>
+    </div>
+    <div class="gg-branches-search"><input type="text" id="gg-branches-filter" placeholder="Filter ${tab}…"></div>
+    <label class="gg-branches-row gg-branches-show-all"><input type="checkbox" id="gg-branches-all" ${selection === 'all' ? 'checked' : ''}> Show All</label>
+    <div class="gg-branches-list">${allNames.length ? allNames.map(name => `<label class="gg-branches-row" data-name="${escapeAttr(name)}"><input type="checkbox" data-name="${escapeAttr(name)}" ${selected.has(name) ? 'checked' : ''}> ${escapeHtml(name)}</label>`).join('') : `<div class="gg-empty-row">No ${tab}.</div>`}</div>`;
   menu.style.display = 'block';
   // Fixed to the button so it floats above the graph instead of sitting in the page flow.
   const rect = anchor.getBoundingClientRect();
@@ -735,6 +753,9 @@ function gitGraphOpenBranchesMenu(project, state, body, anchor) {
     document.removeEventListener('pointerdown', dismiss, true);
     document.removeEventListener('keydown', dismiss, true);
   };
+  menu.querySelectorAll('.gg-branches-tab').forEach((btn) => {
+    btn.onclick = () => { state.branchesMenuTab = btn.dataset.tab; state.branchesFilter = ''; gitGraphOpenBranchesMenu(project, state, body, anchor); };
+  });
   const filter = menu.querySelector('#gg-branches-filter');
   filter.value = state.branchesFilter || '';
   const applyFilter = () => {
@@ -744,17 +765,20 @@ function gitGraphOpenBranchesMenu(project, state, body, anchor) {
     });
   };
   applyFilter();
+  const commit = (next) => {
+    state[selKey] = next;
+    gitGraphSaveUiPrefs(project.id, state);
+    if (selKey === 'branchSelection') gitGraphPatchRepoConfig(project, state, { branchDropdownSelection: next });
+    gitGraphLoadGraph(project, state, body, { reset: true });
+  };
   const showAll = menu.querySelector('#gg-branches-all');
-  showAll.onclick = () => { state.branchSelection = 'all'; gitGraphSaveUiPrefs(project.id, state); gitGraphPatchRepoConfig(project, state, { branchDropdownSelection: 'all' }); gitGraphLoadGraph(project, state, body, { reset: true }); };
-  showAll.ondblclick = () => { state.branchSelection = state.branchSelection === 'all' ? [] : 'all'; gitGraphSaveUiPrefs(project.id, state); gitGraphPatchRepoConfig(project, state, { branchDropdownSelection: state.branchSelection }); gitGraphLoadGraph(project, state, body, { reset: true }); };
+  showAll.onclick = () => commit('all');
+  showAll.ondblclick = () => commit(state[selKey] === 'all' ? [] : 'all');
   menu.querySelectorAll('.gg-branches-list input[type="checkbox"]').forEach((cb) => {
     cb.onchange = () => {
-      const current = state.branchSelection === 'all' ? new Set(allNames) : new Set(state.branchSelection);
+      const current = state[selKey] === 'all' ? new Set(allNames) : new Set(state[selKey]);
       if (cb.checked) current.add(cb.dataset.name); else current.delete(cb.dataset.name);
-      state.branchSelection = [...current];
-      gitGraphSaveUiPrefs(project.id, state);
-      gitGraphPatchRepoConfig(project, state, { branchDropdownSelection: state.branchSelection });
-      gitGraphLoadGraph(project, state, body, { reset: true });
+      commit([...current]);
     };
   });
   filter.oninput = () => { state.branchesFilter = filter.value; applyFilter(); };

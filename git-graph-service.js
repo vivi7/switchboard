@@ -222,14 +222,22 @@ function orderArgs(order) {
 
 function buildRevspec(opts = {}) {
   const args = [];
-  const { branches } = opts;
-  if (Array.isArray(branches) && branches.length) {
-    for (const name of branches) args.push(assertRev(name, 'branch'));
-  } else {
+  const { branches, tags } = opts;
+  const pickedTags = Array.isArray(tags);
+  // An explicit branch list restricts the graph to those branches (plus any
+  // explicitly picked tags); remote branches and all tags only join "Show All".
+  const allBranches = !Array.isArray(branches) || (!branches.length && !(pickedTags && tags.length));
+  if (allBranches) {
     args.push('--branches');
+    if (opts.showRemote) args.push('--remotes');
+  } else {
+    for (const name of branches) args.push(assertRev(name, 'branch'));
   }
-  if (opts.showRemote) args.push('--remotes');
-  if (opts.showTags !== false) args.push('--tags');
+  if (pickedTags) {
+    for (const name of tags) args.push(`refs/tags/${assertRev(name, 'tag')}`);
+  } else if (allBranches && opts.showTags !== false) {
+    args.push('--tags');
+  }
   if (opts.includeReflogCommits) args.push('--reflog');
   if (opts.firstParentOnly) args.push('--first-parent');
   return args;

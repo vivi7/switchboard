@@ -128,6 +128,11 @@
   padding: 6px;
 }
 
+.gg-branches-tabs { display: flex; gap: 4px; margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+.gg-branches-tab { border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 5px 6px; color: #77778c; font-size: 11.5px; font-weight: 650; cursor: pointer; }
+.gg-branches-tab:hover { color: #bcbccc; }
+.gg-branches-tab.active { color: #8fa7e8; border-bottom-color: #8fa7e8; }
+
 .gg-branches-search input {
   width: 100%;
   box-sizing: border-box;
