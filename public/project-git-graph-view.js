@@ -37,6 +37,7 @@ function gitGraphState(projectId) {
       loadingMore: false,
       branchSelection: 'all',
       tagSelection: 'all',
+      refSort: 'asc',
       showRemoteBranches: true,
       order: 'date',
       firstParentOnly: false,
@@ -127,6 +128,7 @@ function gitGraphSaveUiPrefs(projectId, state) {
       columnWidths: state.columnWidths,
       branchSelection: state.branchSelection,
       tagSelection: state.tagSelection,
+      refSort: state.refSort,
       showRemoteBranches: state.showRemoteBranches,
       order: state.order,
       findOpen: state.findOpen,
@@ -504,6 +506,7 @@ function renderProjectGitGraphTab(project, body) {
     columnWidths: prefs.columnWidths || state.columnWidths,
     branchSelection: prefs.branchSelection || state.branchSelection,
     tagSelection: prefs.tagSelection || state.tagSelection,
+    refSort: prefs.refSort || state.refSort,
     showRemoteBranches: prefs.showRemoteBranches !== undefined ? prefs.showRemoteBranches : state.showRemoteBranches,
     order: prefs.order || state.order,
     fileViewType: prefs.fileViewType || state.fileViewType,
@@ -726,12 +729,16 @@ function gitGraphOpenBranchesMenu(project, state, body, anchor) {
     const remotes = state.showRemoteBranches ? gitGraphVisibleRemotes(state.refs?.remotes || [], state.repoConfig && state.repoConfig.perRemoteVisibility) : [];
     allNames = [...heads.map(h => h.name), ...remotes.map(r => `${r.remote}/${r.name}`)];
   }
+  // Natural order, so v1.10 sorts after v1.9.
+  const sortDir = state.refSort === 'desc' ? -1 : 1;
+  allNames.sort((a, b) => sortDir * a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   const selection = state[selKey] || 'all';
   const selected = selection === 'all' ? new Set(allNames) : new Set(selection);
   menu.innerHTML = `
     <div class="gg-branches-tabs">
       <button type="button" class="gg-branches-tab ${tab === 'branches' ? 'active' : ''}" data-tab="branches">Branches</button>
       <button type="button" class="gg-branches-tab ${tab === 'tags' ? 'active' : ''}" data-tab="tags">Tags</button>
+      <button type="button" class="gg-branches-sort" id="gg-branches-sort" title="${sortDir === 1 ? 'Sorted A to Z — click for Z to A' : 'Sorted Z to A — click for A to Z'}">${sortDir === 1 ? 'A→Z' : 'Z→A'}</button>
     </div>
     <div class="gg-branches-search"><input type="text" id="gg-branches-filter" placeholder="Filter ${tab}…"></div>
     <label class="gg-branches-row gg-branches-show-all"><input type="checkbox" id="gg-branches-all" ${selection === 'all' ? 'checked' : ''}> Show All</label>
@@ -756,6 +763,11 @@ function gitGraphOpenBranchesMenu(project, state, body, anchor) {
   menu.querySelectorAll('.gg-branches-tab').forEach((btn) => {
     btn.onclick = () => { state.branchesMenuTab = btn.dataset.tab; state.branchesFilter = ''; gitGraphOpenBranchesMenu(project, state, body, anchor); };
   });
+  menu.querySelector('#gg-branches-sort').onclick = () => {
+    state.refSort = sortDir === 1 ? 'desc' : 'asc';
+    gitGraphSaveUiPrefs(project.id, state);
+    gitGraphOpenBranchesMenu(project, state, body, anchor);
+  };
   const filter = menu.querySelector('#gg-branches-filter');
   filter.value = state.branchesFilter || '';
   const applyFilter = () => {
