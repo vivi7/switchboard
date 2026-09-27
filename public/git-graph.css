@@ -159,7 +159,9 @@
 }
 
 .gg-branches-row:hover { background: rgba(255,255,255,0.05); }
-.gg-branches-show-all { border-bottom: 1px solid rgba(255,255,255,0.07); margin-bottom: 4px; padding-bottom: 8px; }
+.gg-branches-actions { display: flex; gap: 4px; margin: 6px 0; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+.gg-branches-actions button { flex: 1; border: 1px solid rgba(255,255,255,0.09); border-radius: 6px; padding: 3px 6px; background: rgba(255,255,255,0.03); color: #9090a8; font-size: 10.5px; cursor: pointer; white-space: nowrap; }
+.gg-branches-actions button:hover { color: #d8d8e8; background: rgba(255,255,255,0.06); }
 
 /* --- Progress bar --- */
 

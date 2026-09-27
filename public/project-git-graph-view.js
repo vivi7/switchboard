@@ -644,10 +644,10 @@ function gitGraphWireRepoPicker(project, state, body) {
 
 function gitGraphControlBarHtml(project, state) {
   const branchCount = (state.refs?.heads?.length || 0) + (state.refs?.remotes?.length || 0);
-  const branchLabel = state.branchSelection === 'all' ? 'Show All'
-    : Array.isArray(state.branchSelection) && state.branchSelection.length
+  const branchLabel = !Array.isArray(state.branchSelection) ? 'Show All'
+    : state.branchSelection.length
       ? `${state.branchSelection.length} branch${state.branchSelection.length === 1 ? '' : 'es'}`
-      : 'Show All';
+      : 'None';
   const tagCount = Array.isArray(state.tagSelection) ? state.tagSelection.length : null;
   const tagLabel = tagCount === null ? '' : ` · ${tagCount} tag${tagCount === 1 ? '' : 's'}`;
   return `
@@ -741,7 +741,11 @@ function gitGraphOpenBranchesMenu(project, state, body, anchor) {
       <button type="button" class="gg-branches-sort" id="gg-branches-sort" title="${sortDir === 1 ? 'Sorted A to Z — click for Z to A' : 'Sorted Z to A — click for A to Z'}">${sortDir === 1 ? 'A→Z' : 'Z→A'}</button>
     </div>
     <div class="gg-branches-search"><input type="text" id="gg-branches-filter" placeholder="Filter ${tab}…"></div>
-    <label class="gg-branches-row gg-branches-show-all"><input type="checkbox" id="gg-branches-all" ${selection === 'all' ? 'checked' : ''}> Show All</label>
+    <div class="gg-branches-actions">
+      <button type="button" data-act="all">Select All</button>
+      <button type="button" data-act="none">Deselect All</button>
+      <button type="button" data-act="invert">Invert Selection</button>
+    </div>
     <div class="gg-branches-list">${allNames.length ? allNames.map(name => `<label class="gg-branches-row" data-name="${escapeAttr(name)}"><input type="checkbox" data-name="${escapeAttr(name)}" ${selected.has(name) ? 'checked' : ''}> ${escapeHtml(name)}</label>`).join('') : `<div class="gg-empty-row">No ${tab}.</div>`}</div>`;
   menu.style.display = 'block';
   // Fixed to the button so it floats above the graph instead of sitting in the page flow.
@@ -783,9 +787,14 @@ function gitGraphOpenBranchesMenu(project, state, body, anchor) {
     if (selKey === 'branchSelection') gitGraphPatchRepoConfig(project, state, { branchDropdownSelection: next });
     gitGraphLoadGraph(project, state, body, { reset: true });
   };
-  const showAll = menu.querySelector('#gg-branches-all');
-  showAll.onclick = () => commit('all');
-  showAll.ondblclick = () => commit(state[selKey] === 'all' ? [] : 'all');
+  menu.querySelectorAll('.gg-branches-actions button').forEach((btn) => {
+    btn.onclick = () => {
+      if (btn.dataset.act === 'all') return commit('all');
+      if (btn.dataset.act === 'none') return commit([]);
+      const current = state[selKey] === 'all' ? new Set(allNames) : new Set(state[selKey]);
+      commit(allNames.filter(name => !current.has(name)));
+    };
+  });
   menu.querySelectorAll('.gg-branches-list input[type="checkbox"]').forEach((cb) => {
     cb.onchange = () => {
       const current = state[selKey] === 'all' ? new Set(allNames) : new Set(state[selKey]);

@@ -223,21 +223,23 @@ function orderArgs(order) {
 function buildRevspec(opts = {}) {
   const args = [];
   const { branches, tags } = opts;
-  const pickedTags = Array.isArray(tags);
+  const allBranches = !Array.isArray(branches);
   // An explicit branch list restricts the graph to those branches (plus any
-  // explicitly picked tags); remote branches and all tags only join "Show All".
-  const allBranches = !Array.isArray(branches) || (!branches.length && !(pickedTags && tags.length));
+  // explicitly picked tags); remote branches and all tags only join when every
+  // branch is selected, or all tags when no branch is.
   if (allBranches) {
     args.push('--branches');
     if (opts.showRemote) args.push('--remotes');
   } else {
     for (const name of branches) args.push(assertRev(name, 'branch'));
   }
-  if (pickedTags) {
+  if (Array.isArray(tags)) {
     for (const name of tags) args.push(`refs/tags/${assertRev(name, 'tag')}`);
-  } else if (allBranches && opts.showTags !== false) {
+  } else if ((allBranches || !branches.length) && opts.showTags !== false) {
     args.push('--tags');
   }
+  // Nothing selected: git would fall back to HEAD, so report no revisions instead.
+  if (!args.length && !opts.includeReflogCommits) return null;
   if (opts.includeReflogCommits) args.push('--reflog');
   if (opts.firstParentOnly) args.push('--first-parent');
   return args;
@@ -397,7 +399,7 @@ async function getProjectGitGraph(dir, opts = {}) {
 
   const revspec = buildRevspec(opts);
   const [raw, headHash] = await Promise.all([
-    git.logWithParents(dir, { revspec, order, skip, limit: limit + 1 }),
+    revspec ? git.logWithParents(dir, { revspec, order, skip, limit: limit + 1 }) : [],
     currentHeadHash(dir),
   ]);
   const hasMore = raw.length > limit;
