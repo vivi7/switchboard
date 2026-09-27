@@ -516,6 +516,8 @@ function gitGraphRenderSettingsDrawer(project, state, body) {
   if (!drawer) return;
   const repo = gitGraphSelectedRepo(state);
   drawer.style.display = 'block';
+  const toolbar = body.querySelector('.gg-toolbar');
+  if (toolbar) drawer.style.top = `${toolbar.offsetTop + toolbar.offsetHeight + 6}px`;
   const tab = state.settingsTab || 'repository';
   drawer.innerHTML = gitGraphSettingsHeaderHtml(state) +
     (tab === 'global' ? gitGraphGlobalPreferencesHtml(state) : (repo ? gitGraphRepositorySettingsHtml(project, state, repo) : '<div class="gg-empty-row">No repository selected.</div>'));

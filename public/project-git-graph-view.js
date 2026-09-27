@@ -682,13 +682,34 @@ function gitGraphWireControlBar(project, state, body) {
     if (typeof launchTerminalSession === 'function' && repo) launchTerminalSession({ projectPath: repo.path, projectId: project.id });
   };
   const branchesBtn = body.querySelector('#gg-branches-btn');
-  if (branchesBtn) branchesBtn.onclick = () => gitGraphToggleBranchesMenu(project, state, body, branchesBtn);
+  if (branchesBtn) {
+    branchesBtn.onclick = () => gitGraphToggleBranchesMenu(project, state, body, branchesBtn);
+    // Picking a branch reloads (and repaints) the graph; keep the menu open across that.
+    if (state.branchesMenuOpen) gitGraphOpenBranchesMenu(project, state, body, branchesBtn);
+  }
+}
+
+function gitGraphCloseBranchesMenu(state) {
+  state.branchesMenuOpen = false;
+  if (state.branchesMenuCleanup) state.branchesMenuCleanup();
+  state.branchesMenuCleanup = null;
 }
 
 function gitGraphToggleBranchesMenu(project, state, body, anchor) {
+  if (state.branchesMenuOpen) {
+    gitGraphCloseBranchesMenu(state);
+    const menu = body.querySelector('#gg-branches-menu');
+    if (menu) menu.style.display = 'none';
+    return;
+  }
+  gitGraphOpenBranchesMenu(project, state, body, anchor);
+}
+
+function gitGraphOpenBranchesMenu(project, state, body, anchor) {
   const menu = body.querySelector('#gg-branches-menu');
-  const open = menu.style.display !== 'none';
-  if (open) { menu.style.display = 'none'; return; }
+  if (!menu) return;
+  if (state.branchesMenuCleanup) state.branchesMenuCleanup();
+  state.branchesMenuOpen = true;
   const heads = state.refs?.heads || [];
   const remotes = state.showRemoteBranches ? gitGraphVisibleRemotes(state.refs?.remotes || [], state.repoConfig && state.repoConfig.perRemoteVisibility) : [];
   const allNames = [...heads.map(h => h.name), ...remotes.map(r => `${r.remote}/${r.name}`)];
@@ -698,6 +719,31 @@ function gitGraphToggleBranchesMenu(project, state, body, anchor) {
     <label class="gg-branches-row gg-branches-show-all"><input type="checkbox" id="gg-branches-all" ${state.branchSelection === 'all' ? 'checked' : ''}> Show All</label>
     <div class="gg-branches-list">${allNames.map(name => `<label class="gg-branches-row" data-name="${escapeAttr(name)}"><input type="checkbox" data-name="${escapeAttr(name)}" ${selected.has(name) ? 'checked' : ''}> ${escapeHtml(name)}</label>`).join('')}</div>`;
   menu.style.display = 'block';
+  // Fixed to the button so it floats above the graph instead of sitting in the page flow.
+  const rect = anchor.getBoundingClientRect();
+  menu.style.top = `${rect.bottom + 4}px`;
+  menu.style.left = `${rect.left}px`;
+  menu.style.maxHeight = `${Math.max(200, window.innerHeight - rect.bottom - 24)}px`;
+  const dismiss = (e) => {
+    if (e.type === 'keydown' ? e.key !== 'Escape' : (menu.contains(e.target) || anchor.contains(e.target))) return;
+    gitGraphCloseBranchesMenu(state);
+    menu.style.display = 'none';
+  };
+  document.addEventListener('pointerdown', dismiss, true);
+  document.addEventListener('keydown', dismiss, true);
+  state.branchesMenuCleanup = () => {
+    document.removeEventListener('pointerdown', dismiss, true);
+    document.removeEventListener('keydown', dismiss, true);
+  };
+  const filter = menu.querySelector('#gg-branches-filter');
+  filter.value = state.branchesFilter || '';
+  const applyFilter = () => {
+    const q = filter.value.toLowerCase();
+    menu.querySelectorAll('.gg-branches-list .gg-branches-row').forEach((row) => {
+      row.style.display = row.dataset.name.toLowerCase().includes(q) ? '' : 'none';
+    });
+  };
+  applyFilter();
   const showAll = menu.querySelector('#gg-branches-all');
   showAll.onclick = () => { state.branchSelection = 'all'; gitGraphSaveUiPrefs(project.id, state); gitGraphPatchRepoConfig(project, state, { branchDropdownSelection: 'all' }); gitGraphLoadGraph(project, state, body, { reset: true }); };
   showAll.ondblclick = () => { state.branchSelection = state.branchSelection === 'all' ? [] : 'all'; gitGraphSaveUiPrefs(project.id, state); gitGraphPatchRepoConfig(project, state, { branchDropdownSelection: state.branchSelection }); gitGraphLoadGraph(project, state, body, { reset: true }); };
@@ -711,12 +757,7 @@ function gitGraphToggleBranchesMenu(project, state, body, anchor) {
       gitGraphLoadGraph(project, state, body, { reset: true });
     };
   });
-  menu.querySelector('#gg-branches-filter').oninput = (e) => {
-    const q = e.target.value.toLowerCase();
-    menu.querySelectorAll('.gg-branches-list .gg-branches-row').forEach((row) => {
-      row.style.display = row.dataset.name.toLowerCase().includes(q) ? '' : 'none';
-    });
-  };
+  filter.oninput = () => { state.branchesFilter = filter.value; applyFilter(); };
 }
 
 function gitGraphRunNetworkAction(project, state, body, actionId, params) {
