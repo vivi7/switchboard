@@ -110,7 +110,9 @@
    * Returns a plain Array, one entry per input commit, same order:
    *   { hash, lane, colorIndex, edges, row }
    * where `edges` are that commit's own outgoing edges toward its parents:
-   *   { parentHash, toLane, style: 'same-lane' | 'branch-out' | 'merge-in' }
+   *   { parentHash, toLane, viaLane, style: 'same-lane' | 'branch-out' | 'merge-in' }
+   * `viaLane` is the lane the edge runs down; `toLane` is where the parent
+   * ends up (they differ once a convergence merges that lane into another).
    * The array also carries a non-enumerable `.state` for the next
    * incremental call — plain iteration, `.length`, `JSON.stringify`, etc. of
    * the array are unaffected by it.
@@ -200,7 +202,7 @@
         // here, deliberately: this lane simply has nowhere further to go.
         freeLane(lane);
       } else {
-        const firstEdge = { parentHash: parents[0], toLane: lane, style: 'same-lane' };
+        const firstEdge = { parentHash: parents[0], toLane: lane, viaLane: lane, style: 'same-lane' };
         edges.push(firstEdge);
         activeLanes.set(lane, { kind: 'first-parent', color: colorIndex, pendingEdges: [firstEdge] });
         awaited.add(parents[0], lane);
@@ -216,12 +218,12 @@
               // still recorded in that lane's `pendingEdges` so a later
               // convergence that demotes the lane also corrects this edge.
               const reuseLane = lowestOf(already);
-              const edge = { parentHash, toLane: reuseLane, style: 'branch-out' };
+              const edge = { parentHash, toLane: reuseLane, viaLane: reuseLane, style: 'branch-out' };
               edges.push(edge);
               activeLanes.get(reuseLane).pendingEdges.push(edge);
             } else {
               const newLane = allocateLane();
-              const edge = { parentHash, toLane: newLane, style: 'branch-out' };
+              const edge = { parentHash, toLane: newLane, viaLane: newLane, style: 'branch-out' };
               edges.push(edge);
               activeLanes.set(newLane, { kind: 'branch-out', color: nextColorIndex(), pendingEdges: [edge] });
               awaited.add(parentHash, newLane);

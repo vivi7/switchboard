@@ -96,6 +96,18 @@ test('gitGraphBuildLayoutInput always puts Uncommitted at the top and attaches s
   assert.ok(merged.some(r => r.hash === 'c2' && r.kind === 'commit'));
 });
 
+test('gitGraphBuildLayoutInput keeps git order, so a rebased parent with a newer author date never lands above its child', () => {
+  const commits = [
+    { hash: 'child', parents: ['parent'], authorDate: '2024-01-01T00:00:00Z', commitDate: '2024-01-05T00:00:00Z', refs: { heads: [], remotes: [], tags: [] } },
+    { hash: 'parent', parents: [], authorDate: '2024-01-03T00:00:00Z', commitDate: '2024-01-04T00:00:00Z', refs: { heads: [], remotes: [], tags: [] } },
+  ];
+  const stashes = [{ hash: 's1', index: 0, baseHash: 'parent', message: 'WIP', date: '2024-01-06T00:00:00Z' }];
+  const merged = render.gitGraphBuildLayoutInput(commits, stashes, null, 'child');
+  const at = hash => merged.findIndex(r => r.hash === hash);
+  assert.ok(at('child') < at('parent'));
+  assert.ok(at('s1') < at('parent'), 'a stash stays above the commit it was taken from');
+});
+
 test('gitGraphFallbackLayout: a minimal one-lane-no-edges stand-in, used only when the real layout function is not loaded', () => {
   const commits = [
     { hash: 'c', parents: ['b'] }, { hash: 'b', parents: ['a'] }, { hash: 'a', parents: [] },

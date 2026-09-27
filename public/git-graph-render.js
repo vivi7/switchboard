@@ -82,9 +82,12 @@ function gitGraphFormatFullDate(isoValue) {
  * mutate its inputs.
  */
 function gitGraphBuildLayoutInput(commits, stashes, uncommitted, headHash) {
+  // Keep git's order: it already lists every child before its parents. Re-sorting
+  // by date would put a rebased commit (old author date) above its own child.
   const list = (commits || []).map(c => ({ ...c, kind: c.kind || 'commit' }));
+  const stashRows = [];
   for (const stash of (stashes || [])) {
-    list.push({
+    stashRows.push({
       hash: stash.hash,
       shortHash: (stash.hash || '').slice(0, 8),
       parents: [stash.branch && stash.baseHash ? stash.baseHash : stash.baseHash].filter(Boolean),
@@ -97,7 +100,16 @@ function gitGraphBuildLayoutInput(commits, stashes, uncommitted, headHash) {
       stashIndex: stash.index,
     });
   }
-  list.sort((a, b) => new Date(b.authorDate || b.commitDate || 0) - new Date(a.authorDate || a.commitDate || 0));
+  // A stash goes where its date falls, but never below the commit it was taken from.
+  stashRows.sort((a, b) => new Date(a.commitDate || 0) - new Date(b.commitDate || 0));
+  for (const stash of stashRows) {
+    const time = new Date(stash.commitDate || 0).getTime();
+    let at = list.findIndex(c => new Date(c.commitDate || c.authorDate || 0).getTime() < time);
+    if (at === -1) at = list.length;
+    const base = stash.parents[0] ? list.findIndex(c => c.hash === stash.parents[0]) : -1;
+    if (base !== -1 && base < at) at = base;
+    list.splice(at, 0, stash);
+  }
   if (uncommitted) {
     list.unshift({
       hash: '#uncommitted',
@@ -163,11 +175,14 @@ function gitGraphRenderGraphSvg(rows, laneAssignments, opts = {}) {
     const color = gitGraphPaletteColor(palette, assignment.colorIndex || 0);
 
     for (const edge of assignment.edges || []) {
+      // An edge bends into its own lane on the first row, runs straight down,
+      // and only bends again on the last row if its parent sits in another lane.
+      // A parent that isn't loaded yet keeps the lane running off the bottom.
+      const via = laneWidth / 2 + (edge.viaLane != null ? edge.viaLane : edge.toLane) * laneWidth;
       const targetRow = byHash.get(edge.parentHash);
-      if (targetRow === undefined) continue;
-      const tx = laneWidth / 2 + edge.toLane * laneWidth;
-      const ty = rowHeight / 2 + targetRow * rowHeight;
-      paths.push(gitGraphEdgePath(cx, cy, tx, ty, color, style));
+      const tx = targetRow === undefined ? via : laneWidth / 2 + edge.toLane * laneWidth;
+      const ty = targetRow === undefined ? height + rowHeight / 2 : rowHeight / 2 + targetRow * rowHeight;
+      paths.push(gitGraphEdgePath(cx, cy, tx, ty, color, style, { via, rowHeight }));
     }
 
     let nodeMarkup;
@@ -187,7 +202,18 @@ function gitGraphRenderGraphSvg(rows, laneAssignments, opts = {}) {
   return `<svg class="gg-graph-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" data-gg-lane-width="${laneWidth}" data-gg-row-height="${rowHeight}"><g class="gg-edges">${paths.join('')}</g><g class="gg-nodes">${nodes.join('')}</g></svg>`;
 }
 
-function gitGraphEdgePath(x1, y1, x2, y2, color, style) {
+function gitGraphEdgePath(x1, y1, x2, y2, color, style, route) {
+  if (route && y2 - y1 > route.rowHeight) {
+    const bend = (xa, ya, xb, yb) => {
+      if (xa === xb) return ` L${xb} ${yb}`;
+      const midY = (ya + yb) / 2;
+      return style === 'angular' ? ` L${xa} ${midY} L${xb} ${midY} L${xb} ${yb}` : ` C${xa} ${midY}, ${xb} ${midY}, ${xb} ${yb}`;
+    };
+    const top = y1 + route.rowHeight;
+    const bottom = y2 - route.rowHeight;
+    const d = `M${x1} ${y1}` + bend(x1, y1, route.via, top) + (bottom > top ? ` L${route.via} ${bottom}` : '') + bend(route.via, bottom, x2, y2);
+    return `<path d="${d}" fill="none" stroke="${color}" stroke-width="1.6" class="gg-edge gg-edge-${style}"/>`;
+  }
   let d;
   if (x1 === x2) {
     d = `M${x1} ${y1} L${x2} ${y2}`;

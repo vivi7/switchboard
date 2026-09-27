@@ -3,6 +3,9 @@ const assert = require('node:assert/strict');
 
 const { computeGitGraphLayout } = require('../public/git-graph-layout');
 
+// viaLane (the lane an edge runs down) is covered by its own test below.
+const withoutVia = ({ viaLane, ...edge }) => edge;
+
 // Fixtures below list commits newest-first, exactly as `git log` (and so
 // `git-graph-service.js`) hands them to the layout function — row 0 is the
 // top of the graph.
@@ -19,9 +22,9 @@ test('linear history: one lane, one colour, straight same-lane edges down to the
   for (const row of rows) assert.equal(row.lane, 0);
   assert.equal(rows[0].colorIndex, rows[1].colorIndex);
   assert.equal(rows[1].colorIndex, rows[2].colorIndex);
-  assert.deepEqual(rows[0].edges, [{ parentHash: 'c3', toLane: 0, style: 'same-lane' }]);
-  assert.deepEqual(rows[2].edges, [{ parentHash: 'c1', toLane: 0, style: 'same-lane' }]);
-  assert.deepEqual(rows[3].edges, [], 'root commit has no outgoing edges');
+  assert.deepEqual(rows[0].edges.map(withoutVia), [{ parentHash: 'c3', toLane: 0, style: 'same-lane' }]);
+  assert.deepEqual(rows[2].edges.map(withoutVia), [{ parentHash: 'c1', toLane: 0, style: 'same-lane' }]);
+  assert.deepEqual(rows[3].edges.map(withoutVia), [], 'root commit has no outgoing edges');
 });
 
 test('two branches that never touch get distinct, stable lanes and colours', () => {
@@ -58,7 +61,7 @@ test('normal 2-parent merge: mainline colour survives; feature branch reconverge
   const byHash = Object.fromEntries(rows.map(r => [r.hash, r]));
 
   assert.equal(byHash.m.lane, 0);
-  assert.deepEqual(byHash.m.edges, [
+  assert.deepEqual(byHash.m.edges.map(withoutVia), [
     { parentHash: 'main1', toLane: 0, style: 'same-lane' },
     { parentHash: 'feat1', toLane: 1, style: 'branch-out' },
   ]);
@@ -71,7 +74,7 @@ test('normal 2-parent merge: mainline colour survives; feature branch reconverge
   // either way) wins, and feat1's own edge is corrected to merge in.
   assert.equal(byHash.base.lane, 0);
   assert.equal(byHash.base.colorIndex, byHash.main1.colorIndex);
-  assert.deepEqual(byHash.feat1.edges, [{ parentHash: 'base', toLane: 0, style: 'merge-in' }]);
+  assert.deepEqual(byHash.feat1.edges.map(withoutVia), [{ parentHash: 'base', toLane: 0, style: 'merge-in' }]);
   const maxLane = Math.max(...rows.map(r => r.lane));
   assert.equal(maxLane, 1, 'no lane beyond the two genuinely concurrent lines was ever allocated');
 });
@@ -91,8 +94,8 @@ test('additional-parent lane dedup (step 2e): a merge\'s second parent already a
   const rows = computeGitGraphLayout(commits);
   const byHash = Object.fromEntries(rows.map(r => [r.hash, r]));
 
-  assert.deepEqual(byHash.z.edges, [{ parentHash: 'y', toLane: 0, style: 'same-lane' }], 'never demoted');
-  assert.deepEqual(byHash.m.edges, [
+  assert.deepEqual(byHash.z.edges.map(withoutVia), [{ parentHash: 'y', toLane: 0, style: 'same-lane' }], 'never demoted');
+  assert.deepEqual(byHash.m.edges.map(withoutVia), [
     { parentHash: 'x', toLane: 1, style: 'same-lane' },
     { parentHash: 'y', toLane: 0, style: 'branch-out' },
   ]);
@@ -173,7 +176,7 @@ test('merge-convergence colour continuity: the first-parent-descending lane wins
   // The losing lane's edge, recorded back when `m` was processed, is
   // corrected in place — not replaced, not left stale — once the
   // convergence at `w` resolves later in the same pass.
-  assert.deepEqual(byHash.m.edges[1], { parentHash: 'w', toLane: 2, style: 'merge-in' });
+  assert.deepEqual(withoutVia(byHash.m.edges[1]), { parentHash: 'w', toLane: 2, style: 'merge-in' });
 
   assert.equal(byHash.base.lane, 2);
   assert.equal(byHash.base.colorIndex, byHash.w.colorIndex);
@@ -196,8 +199,8 @@ test('stash and Uncommitted pseudo-commits lay out with zero special-casing, inc
   // would; the lower-indexed lane (Uncommitted's) wins the tie between two
   // equally first-parent-tagged lanes, and stash1's edge is corrected.
   assert.equal(byHash.head.lane, 0);
-  assert.deepEqual(byHash.stash1.edges[0], { parentHash: 'head', toLane: 0, style: 'merge-in' });
-  assert.deepEqual(byHash.head.edges, [{ parentHash: 'base', toLane: 0, style: 'same-lane' }]);
+  assert.deepEqual(withoutVia(byHash.stash1.edges[0]), { parentHash: 'head', toLane: 0, style: 'merge-in' });
+  assert.deepEqual(byHash.head.edges.map(withoutVia), [{ parentHash: 'base', toLane: 0, style: 'same-lane' }]);
   assert.equal(byHash.base.lane, 0);
 });
 
@@ -210,7 +213,7 @@ test('a single stash cleanly attaches to its base commit\'s row when nothing els
   const rows = computeGitGraphLayout(commits);
   const byHash = Object.fromEntries(rows.map(r => [r.hash, r]));
   assert.equal(byHash.stash1.lane, 0);
-  assert.deepEqual(byHash.stash1.edges, [{ parentHash: 'base', toLane: 0, style: 'same-lane' }]);
+  assert.deepEqual(byHash.stash1.edges.map(withoutVia), [{ parentHash: 'base', toLane: 0, style: 'same-lane' }]);
   // head, a second independent tip, gets its own lane and later converges
   // on base too, exercising the same general mechanism once more.
   assert.notEqual(byHash.head.lane, byHash.stash1.lane);
@@ -255,7 +258,7 @@ test('firstParentOnly suppresses every non-first parent\'s lane and edge entirel
   ];
   const rows = computeGitGraphLayout(commits, 'date', { firstParentOnly: true });
   const byHash = Object.fromEntries(rows.map(r => [r.hash, r]));
-  assert.deepEqual(byHash.m.edges, [{ parentHash: 'a', toLane: 0, style: 'same-lane' }]);
+  assert.deepEqual(byHash.m.edges.map(withoutVia), [{ parentHash: 'a', toLane: 0, style: 'same-lane' }]);
   // b and c are never awaited at all now: nothing in the whole output points
   // at them (contrast the plain octopus test above, where m.edges lists
   // both). They still surface as rows (the caller decided what's in the
@@ -292,7 +295,7 @@ test('incremental re-layout ("Load More") matches laying out the combined window
   // but only resolves on the second page — proving the first page's
   // already-returned row was corrected in place, not left stale.
   assert.deepStrictEqual(firstResult[0].edges[1], fresh[0].edges[1]);
-  assert.deepEqual(firstResult[0].edges[1], { parentHash: 'w', toLane: 2, style: 'merge-in' });
+  assert.deepEqual(withoutVia(firstResult[0].edges[1]), { parentHash: 'w', toLane: 2, style: 'merge-in' });
 });
 
 test('incremental re-layout also matches from-scratch on a purely linear split (no cross-page convergence)', () => {
@@ -312,7 +315,7 @@ test('empty and single-commit inputs degrade gracefully', () => {
   const one = computeGitGraphLayout([{ hash: 'only', parents: [] }]);
   assert.equal(one.length, 1);
   assert.equal(one[0].lane, 0);
-  assert.deepEqual(one[0].edges, []);
+  assert.deepEqual(one[0].edges.map(withoutVia), []);
 });
 
 // --- G.1 performance smoke test: a large synthetic history, generated once,
@@ -382,4 +385,18 @@ test('performance smoke test: ~10k commits / ~2k fork events lay out well within
   const maxLane = Math.max(...rows.map(r => r.lane));
   assert.ok(maxLane < 200, `lane count should stay well bounded by reuse, got ${maxLane + 1} lanes`);
   assert.ok(elapsedMs < 3000, `expected a linear-time layout well under 3s, took ${elapsedMs}ms`);
+});
+
+test('an edge keeps the lane it runs down (viaLane) when a convergence moves its parent into another lane', () => {
+  // m merges feat (lane 1); feat's line later converges into base on lane 0.
+  const rows = computeGitGraphLayout([
+    { hash: 'm', parents: ['main1', 'feat1'] },
+    { hash: 'main1', parents: ['base'] },
+    { hash: 'feat1', parents: ['base'] },
+    { hash: 'base', parents: [] },
+  ], 'date');
+  const feat = rows.find(r => r.hash === 'feat1');
+  assert.equal(feat.edges[0].toLane, 0);
+  assert.equal(feat.edges[0].viaLane, feat.lane);
+  assert.notEqual(feat.edges[0].viaLane, feat.edges[0].toLane);
 });
