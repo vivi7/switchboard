@@ -1,0 +1,577 @@
+/* Git Graph tab — kept in its own file rather than growing the 7,000+ line
+   style.css further. Reuses the existing Git tab's dark palette
+   (greens/reds/amber/blue-violet, same
+   greys) for visual continuity with the tab it sits directly beside; no new
+   hex values are introduced for anything the Git tab already has a colour
+   for. */
+
+.gg-tab-body { padding: 12px 0 0; display: flex; flex-direction: column; }
+
+.gg-tab-shell {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+}
+
+/* --- Repo picker (mirrors .git-repo-picker) --- */
+
+.gg-repo-picker {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  align-self: flex-start;
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 7px;
+  background: rgba(255,255,255,0.035);
+}
+
+.gg-repo-option {
+  border: 0;
+  border-radius: 5px;
+  padding: 5px 10px;
+  background: transparent;
+  color: #77778c;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.gg-repo-option:hover { color: #bcbccc; }
+.gg-repo-option.active { color: #d8d8e8; background: rgba(255,255,255,0.075); }
+
+/* --- Control bar --- */
+
+.gg-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 14px;
+  border-top: 1px solid rgba(255,255,255,0.065);
+  border-bottom: 1px solid rgba(255,255,255,0.065);
+  background: #18181f;
+}
+
+.gg-toolbar-left,
+.gg-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gg-branches-dropdown { position: relative; max-width: 260px; }
+
+.gg-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 7px;
+  padding: 5px 9px;
+  background: rgba(255,255,255,0.035);
+  color: #bcbccc;
+  font: 600 11.5px inherit;
+  cursor: pointer;
+  max-width: 240px;
+  overflow: hidden;
+}
+
+.gg-toolbar-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gg-toolbar-btn:hover { background: rgba(255,255,255,0.06); }
+
+.gg-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #9090a8;
+  font-size: 11.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.gg-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #8989a0;
+  cursor: pointer;
+}
+
+.gg-icon-btn:hover { background: rgba(255,255,255,0.06); color: #d8d8e8; }
+.gg-icon-btn.gg-spin svg { animation: gg-spin 0.9s linear infinite; }
+@keyframes gg-spin { to { transform: rotate(360deg); } }
+
+.gg-branches-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  width: 260px;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 9px;
+  background: #1b1b23;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  padding: 6px;
+}
+
+.gg-branches-search input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 6px;
+  padding: 5px 8px;
+  margin-bottom: 5px;
+  background: rgba(0,0,0,0.25);
+  color: #d8d8e8;
+  font-size: 11.5px;
+}
+
+.gg-branches-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 6px;
+  border-radius: 5px;
+  color: #bcbccc;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.gg-branches-row:hover { background: rgba(255,255,255,0.05); }
+.gg-branches-show-all { border-bottom: 1px solid rgba(255,255,255,0.07); margin-bottom: 4px; padding-bottom: 8px; }
+
+/* --- Progress bar --- */
+
+.gg-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 11px;
+  border: 1px solid rgba(122,132,255,0.28);
+  border-radius: 8px;
+  background: rgba(122,132,255,0.09);
+  color: #aab0ee;
+  font-size: 11.5px;
+}
+
+.gg-progress-cancel {
+  border: 1px solid rgba(224,113,128,0.35);
+  border-radius: 6px;
+  padding: 3px 9px;
+  background: rgba(224,113,128,0.1);
+  color: #e2939e;
+  font-size: 10.5px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+/* --- Table --- */
+
+.gg-table-wrap {
+  border-top: 1px solid rgba(255,255,255,0.065);
+  border-bottom: 1px solid rgba(255,255,255,0.065);
+  background: #14141a;
+  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 200px;
+}
+
+.gg-thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  background: #1a1a22;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+
+.gg-th {
+  position: relative;
+  padding: 7px 10px;
+  color: #747489;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.gg-th[data-col="graph"] { width: var(--gg-graph-width, 60px); flex: 0 0 auto; }
+.gg-th[data-col="description"] { flex: 1 1 auto; min-width: 200px; }
+.gg-th[data-col="date"] { width: 140px; flex: 0 0 auto; }
+.gg-th[data-col="author"] { width: 130px; flex: 0 0 auto; }
+.gg-th[data-col="commit"] { width: 90px; flex: 0 0 auto; }
+
+.gg-col-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.gg-tbody { position: relative; }
+
+.gg-row {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid rgba(255,255,255,0.035);
+  cursor: pointer;
+}
+
+.gg-row:hover { background: rgba(255,255,255,0.03); }
+.gg-row.gg-row-selected,
+.gg-row.gg-row-compare-selected { background: rgba(122,132,255,0.11); }
+.gg-row.gg-muted .gg-subject,
+.gg-row.gg-muted .gg-cell-author,
+.gg-row.gg-muted .gg-cell-date { color: #6e6e6e; }
+.gg-row.gg-find-match { outline: 1px solid rgba(224,170,99,0.4); outline-offset: -1px; }
+.gg-row.gg-find-current { background: rgba(224,170,99,0.14); }
+.gg-row.gg-flash { animation: gg-flash 0.9s ease; }
+@keyframes gg-flash { 0%, 100% { background: transparent; } 40% { background: rgba(122,132,255,0.22); } }
+
+.gg-cell {
+  padding: 5px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #c9c9dc;
+  font-size: 11.5px;
+  display: flex;
+  align-items: center;
+}
+
+.gg-cell-graph { width: var(--gg-graph-width, 60px); flex: 0 0 auto; padding: 0; position: relative; }
+.gg-cell-description { flex: 1 1 auto; min-width: 200px; gap: 6px; }
+.gg-cell-date { width: 140px; flex: 0 0 auto; color: #8989a0; }
+.gg-cell-author { width: 130px; flex: 0 0 auto; color: #8989a0; }
+.gg-cell-commit { width: 90px; flex: 0 0 auto; color: #77778c; font-size: 10.5px; }
+
+.gg-subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.gg-graph-svg { display: block; }
+.gg-graph-clip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  width: var(--gg-graph-width, 60px);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.gg-load-more {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-top: 1px solid rgba(255,255,255,0.055);
+  padding: 9px;
+  background: rgba(255,255,255,0.02);
+  color: #8fa7e8;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.gg-load-more:hover { background: rgba(255,255,255,0.04); }
+
+/* --- Reference-label pills --- */
+
+.gg-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(143,167,232,0.16);
+  color: #8fa7e8;
+  font-size: 10px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.gg-pill-remote { background: rgba(255,255,255,0.07); color: #9090a8; padding-left: 5px; }
+.gg-pill-combined.gg-pill-remote { margin-left: -3px; border-top-left-radius: 3px; border-bottom-left-radius: 3px; }
+.gg-pill-tag { background: rgba(224,170,99,0.14); color: #e0aa63; }
+.gg-pill-head { background: #d8d8e8; color: #14141a; }
+.gg-stash-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(137,146,220,0.16);
+  color: #8992dc;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+/* --- Commit Details / Comparison --- */
+
+.gg-details {
+  position: relative;
+  border-top: 1px solid rgba(255,255,255,0.07);
+  background: #17171e;
+  padding: 14px 16px 16px;
+}
+
+.gg-details-docked {
+  border: 1px solid rgba(255,255,255,0.065);
+  border-radius: 10px;
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.gg-details-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  border: 0;
+  background: transparent;
+  color: #77778c;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.gg-details-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.gg-details-header {
+  color: #bcbccc;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.gg-detail-field { margin-bottom: 5px; font-size: 11.5px; color: #c9c9dc; }
+.gg-detail-label { color: #747489; font-weight: 650; margin-right: 4px; }
+.gg-detail-secondary { color: #77778c; }
+.gg-detail-body { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.055); color: #bcbccc; font-size: 11.5px; line-height: 1.55; white-space: pre-wrap; }
+.gg-link { color: #8fa7e8; text-decoration: none; }
+.gg-link:hover { text-decoration: underline; }
+
+.gg-file-view-toggle { display: flex; gap: 4px; margin-bottom: 8px; }
+.gg-toggle-btn { border: 1px solid rgba(255,255,255,0.09); border-radius: 6px; padding: 3px 9px; background: rgba(255,255,255,0.03); color: #9090a8; font-size: 10.5px; cursor: pointer; }
+.gg-toggle-btn:hover { color: #d8d8e8; }
+
+.gg-tree-folder-label { display: flex; align-items: center; gap: 6px; padding: 4px 2px; color: #9090a8; font-size: 11px; }
+.gg-tree-children { margin-left: 14px; }
+
+.gg-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.gg-file-row:hover { background: rgba(255,255,255,0.04); }
+
+.gg-file-status {
+  width: 15px;
+  flex: 0 0 15px;
+  text-align: center;
+  font: 700 10px 'SF Mono', 'Fira Code', Menlo, monospace;
+  color: #d6a45e;
+}
+
+.gg-file-status-added, .gg-file-status-untracked { color: #69c47c; }
+.gg-file-status-deleted, .gg-file-status-conflicted { color: #df7180; }
+.gg-file-status-renamed { color: #8fa7e8; }
+
+.gg-file-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #bdbdd0; font-size: 11px; }
+
+.gg-diffstat { flex: 0 0 auto; display: inline-flex; gap: 6px; font-family: 'SF Mono', 'Fira Code', Menlo, monospace; font-size: 10.5px; }
+.gg-diffstat-add { color: #72c986; }
+.gg-diffstat-del { color: #df7987; }
+
+/* --- Find widget --- */
+
+.gg-find-widget {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid rgba(255,255,255,0.065);
+  border-radius: 8px;
+  background: #18181f;
+}
+
+.gg-find-widget input[type="text"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: rgba(0,0,0,0.25);
+  color: #d8d8e8;
+  font-size: 11.5px;
+}
+
+.gg-find-count { color: #77778c; font-size: 10.5px; white-space: nowrap; }
+.gg-find-widget button { border: 1px solid rgba(255,255,255,0.09); border-radius: 6px; padding: 3px 8px; background: rgba(255,255,255,0.03); color: #9090a8; cursor: pointer; }
+
+/* --- Repository Settings drawer --- */
+
+.gg-settings-drawer {
+  border: 1px solid rgba(255,255,255,0.065);
+  border-radius: 10px;
+  background: #18181f;
+  padding: 12px 14px;
+}
+
+.gg-settings-header { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 650; color: #d6d6e8; margin-bottom: 8px; }
+.gg-settings-header button { border: 0; background: transparent; color: #77778c; font-size: 16px; cursor: pointer; }
+.gg-settings-tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+.gg-settings-tab { border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 6px 4px; margin-right: 10px; color: #77778c; font-size: 11.5px; font-weight: 650; cursor: pointer; }
+.gg-settings-tab:hover { color: #bcbccc; }
+.gg-settings-tab.active { color: #8fa7e8; border-bottom-color: #8fa7e8; }
+.gg-settings-section { margin-bottom: 14px; max-height: 60vh; overflow-y: auto; }
+.gg-settings-title { color: #747489; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 6px; }
+.gg-settings-drawer .gg-remote-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 11.5px; }
+.gg-remote-name { flex: 0 0 auto; }
+.gg-remote-url { flex: 1 1 auto; min-width: 0; color: #77778c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gg-remote-actions { flex: 0 0 auto; display: flex; gap: 2px; }
+.gg-remote-actions .gg-icon-btn { width: 22px; height: 22px; }
+.gg-settings-section .gg-checkbox { display: flex; margin-bottom: 6px; }
+.gg-settings-checkbox-row { margin-bottom: 6px; }
+.gg-settings-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.gg-settings-field-label { font-size: 11.5px; color: #9090a8; }
+.gg-field-input-number { max-width: 100px; }
+.gg-settings-summary { font-size: 11.5px; color: #9090a8; margin-bottom: 6px; }
+.gg-settings-btn { font-size: 11px; padding: 5px 10px; margin-top: 2px; }
+
+/* --- Empty / error / loading states --- */
+
+.gg-empty-state, .gg-error-state {
+  padding: 40px 20px;
+  text-align: center;
+  color: #77778c;
+  font-size: 12.5px;
+}
+
+.gg-empty-title { color: #bcbccc; font-size: 14px; font-weight: 650; margin-bottom: 6px; }
+.gg-empty-row { padding: 16px; color: #6f6f84; font-size: 11.5px; text-align: center; }
+
+.gg-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 0;
+  color: #77778c;
+  font-size: 12.5px;
+}
+
+.gg-loading-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #8fa7e8;
+  animation: gg-pulse 1s ease-in-out infinite;
+}
+
+@keyframes gg-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+
+/* --- Diff viewer host (CodeMirror merge viewer, mounted over the tab) --- */
+
+.gg-diff-host {
+  position: fixed;
+  inset: 6vh 6vw;
+  z-index: 200;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  background: #14141a;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+
+.gg-diff-host .gg-details-close { top: 6px; right: 8px; z-index: 1; }
+.gg-diff-host-content { position: absolute; inset: 30px 0 0 0; overflow: auto; }
+
+/* --- Git Graph dialogs, built on the existing add-project-* bespoke-dialog
+   skeleton (dialogs.js) — same overlay/box/field classes, no new dialog
+   infrastructure. --- */
+
+.gg-dialog-body { display: flex; flex-direction: column; gap: 12px; margin: 4px 0 12px; }
+.gg-field { display: flex; flex-direction: column; gap: 4px; }
+.gg-field-label { font-size: 12px; color: #9090a8; }
+.gg-field-input { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px; color: #d8d8e8; padding: 6px 8px; font-size: 13px; font-family: inherit; }
+.gg-field-input:disabled { opacity: 0.5; }
+.gg-field textarea.gg-field-input { min-height: 60px; resize: vertical; }
+.gg-field-checkbox label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #bcbccc; }
+.gg-field-hint { font-size: 11px; color: #6f6f84; margin-left: 22px; }
+.gg-remote-list { display: flex; flex-direction: column; gap: 4px; margin-left: 4px; }
+.gg-remote-list .gg-remote-row { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #bcbccc; }
+.gg-dialog-error { color: #df7180; font-size: 12px; margin: 4px 0 8px; }
+.gg-dialog-warning { color: #e0aa63; font-size: 13px; margin: 0 0 8px; }
+.gg-dialog-hint { color: #8989a0; font-size: 12px; margin: 0 0 8px; }
+.gg-dialog-primary-danger { background: rgba(223,113,128,0.18) !important; color: #df7180 !important; }
+.gg-dialog .gg-detail-row { display: flex; gap: 8px; font-size: 13px; padding: 2px 0; }
+.gg-dialog .gg-detail-message { margin-top: 8px; font-size: 13px; color: #d8d8e8; white-space: pre-wrap; }
+.gg-mono { font-family: 'SF Mono', 'Fira Code', Menlo, monospace; font-size: 12px; }
+
+/* --- Avatars --- */
+
+.gg-avatar {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.gg-avatar-placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(143,167,232,0.22);
+  color: #8fa7e8;
+  font-weight: 700;
+}
+
+/* --- Commit signature status --- */
+
+.gg-signature-badge { margin-left: 6px; cursor: default; font-size: 10px; }
+.gg-signature-good { color: #69c47c; }
+.gg-signature-bad { color: #df7180; }
+.gg-signature-unknown { color: #e0aa63; }
+
+/* --- Code Review --- */
+
+.gg-details-review-bar { display: flex; justify-content: flex-end; margin: -4px 28px 8px 0; }
+.gg-code-review-btn { color: #8fa7e8; }
+.gg-file-row.gg-file-unreviewed .gg-file-name { font-weight: 700; color: #d8d8e8; }
+.gg-file-eye { margin-left: 4px; color: #8fa7e8; font-size: 9px; }
+
+/* --- Reference-label alignment — a Switchboard-own, modest visual
+   distinction, since the setting's exact upstream behaviour beyond "3
+   options, default Normal" isn't documented anywhere readily available;
+   "Normal" (unset) renders exactly as before. --- */
+
+.gg-ref-align-branch-leading .gg-cell-description { flex-direction: row; }
+.gg-ref-align-branch-leading .gg-subject { order: 1; }
+.gg-ref-align-graph-aligned .gg-pill,
+.gg-ref-align-graph-aligned .gg-stash-badge { min-width: 64px; justify-content: center; }
