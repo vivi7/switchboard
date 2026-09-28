@@ -90,7 +90,7 @@ function gitGraphBuildLayoutInput(commits, stashes, uncommitted, headHash) {
     stashRows.push({
       hash: stash.hash,
       shortHash: (stash.hash || '').slice(0, 8),
-      parents: [stash.branch && stash.baseHash ? stash.baseHash : stash.baseHash].filter(Boolean),
+      parents: stash.baseCommitHash ? [stash.baseCommitHash] : [],
       authorName: '', authorEmail: '', authorDate: stash.date,
       committerName: '', committerEmail: '', commitDate: stash.date,
       subject: stash.message || '',
@@ -100,14 +100,16 @@ function gitGraphBuildLayoutInput(commits, stashes, uncommitted, headHash) {
       stashIndex: stash.index,
     });
   }
-  // A stash goes where its date falls, but never below the commit it was taken from.
+  // A stash goes where its date falls, but never below the commit it was taken
+  // from; one whose base commit isn't loaded yet waits for Load More rather
+  // than hanging a line off the bottom of the graph.
   stashRows.sort((a, b) => new Date(a.commitDate || 0) - new Date(b.commitDate || 0));
   for (const stash of stashRows) {
+    const base = stash.parents[0] ? list.findIndex(c => c.hash === stash.parents[0]) : -1;
+    if (base === -1) continue;
     const time = new Date(stash.commitDate || 0).getTime();
     let at = list.findIndex(c => new Date(c.commitDate || c.authorDate || 0).getTime() < time);
-    if (at === -1) at = list.length;
-    const base = stash.parents[0] ? list.findIndex(c => c.hash === stash.parents[0]) : -1;
-    if (base !== -1 && base < at) at = base;
+    if (at === -1 || at > base) at = base;
     list.splice(at, 0, stash);
   }
   if (uncommitted) {
@@ -163,7 +165,11 @@ function gitGraphRenderGraphSvg(rows, laneAssignments, opts = {}) {
   const byHash = new Map(rows.map((r, i) => [r.hash, i]));
   const maxLane = laneAssignments.reduce((m, a) => Math.max(m, a.lane), 0);
   const width = (maxLane + 1) * laneWidth + laneWidth;
-  const height = rows.length * rowHeight;
+  // opts.rowY carries each table row's measured centre, so nodes stay on their
+  // rows even when rows differ in height or commit details open inline.
+  const rowY = Array.isArray(opts.rowY) && opts.rowY.length === rows.length ? opts.rowY : null;
+  const yOf = i => (rowY ? rowY[i] : rowHeight / 2 + i * rowHeight);
+  const height = rowY && opts.height ? opts.height : rows.length * rowHeight;
   const paths = [];
   const nodes = [];
 
@@ -171,7 +177,7 @@ function gitGraphRenderGraphSvg(rows, laneAssignments, opts = {}) {
     const row = rows[i];
     const assignment = laneAssignments[i] || { lane: 0, colorIndex: 0, edges: [] };
     const cx = laneWidth / 2 + assignment.lane * laneWidth;
-    const cy = rowHeight / 2 + i * rowHeight;
+    const cy = yOf(i);
     const color = gitGraphPaletteColor(palette, assignment.colorIndex || 0);
 
     for (const edge of assignment.edges || []) {
@@ -180,9 +186,14 @@ function gitGraphRenderGraphSvg(rows, laneAssignments, opts = {}) {
       // A parent that isn't loaded yet keeps the lane running off the bottom.
       const via = laneWidth / 2 + (edge.viaLane != null ? edge.viaLane : edge.toLane) * laneWidth;
       const targetRow = byHash.get(edge.parentHash);
-      const tx = targetRow === undefined ? via : laneWidth / 2 + edge.toLane * laneWidth;
-      const ty = targetRow === undefined ? height + rowHeight / 2 : rowHeight / 2 + targetRow * rowHeight;
-      paths.push(gitGraphEdgePath(cx, cy, tx, ty, color, style, { via, rowHeight }));
+      const loaded = targetRow !== undefined;
+      const tx = loaded ? laneWidth / 2 + edge.toLane * laneWidth : via;
+      const ty = loaded ? yOf(targetRow) : height + rowHeight / 2;
+      const endRow = loaded ? targetRow : rows.length;
+      const route = endRow - i > 1
+        ? { via, top: yOf(i + 1), bottom: loaded ? yOf(targetRow - 1) : height }
+        : null;
+      paths.push(gitGraphEdgePath(cx, cy, tx, ty, color, style, route));
     }
 
     let nodeMarkup;
@@ -203,14 +214,13 @@ function gitGraphRenderGraphSvg(rows, laneAssignments, opts = {}) {
 }
 
 function gitGraphEdgePath(x1, y1, x2, y2, color, style, route) {
-  if (route && y2 - y1 > route.rowHeight) {
+  if (route) {
     const bend = (xa, ya, xb, yb) => {
       if (xa === xb) return ` L${xb} ${yb}`;
       const midY = (ya + yb) / 2;
       return style === 'angular' ? ` L${xa} ${midY} L${xb} ${midY} L${xb} ${yb}` : ` C${xa} ${midY}, ${xb} ${midY}, ${xb} ${yb}`;
     };
-    const top = y1 + route.rowHeight;
-    const bottom = y2 - route.rowHeight;
+    const { top, bottom } = route;
     const d = `M${x1} ${y1}` + bend(x1, y1, route.via, top) + (bottom > top ? ` L${route.via} ${bottom}` : '') + bend(route.via, bottom, x2, y2);
     return `<path d="${d}" fill="none" stroke="${color}" stroke-width="1.6" class="gg-edge gg-edge-${style}"/>`;
   }

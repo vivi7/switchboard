@@ -86,7 +86,7 @@ test('gitGraphBuildLayoutInput always puts Uncommitted at the top and attaches s
     { hash: 'c2', parents: ['c1'], authorDate: '2024-01-02T00:00:00Z', isHead: true, refs: { heads: [], remotes: [], tags: [] } },
     { hash: 'c1', parents: [], authorDate: '2024-01-01T00:00:00Z', refs: { heads: [], remotes: [], tags: [] } },
   ];
-  const stashes = [{ hash: 's1', index: 0, baseHash: 'c1', message: 'WIP', date: '2024-01-01T12:00:00Z' }];
+  const stashes = [{ hash: 's1', index: 0, baseCommitHash: 'c1', message: 'WIP', date: '2024-01-01T12:00:00Z' }];
   const merged = render.gitGraphBuildLayoutInput(commits, stashes, { changeCount: 3 }, 'c2');
   assert.equal(merged[0].kind, 'uncommitted');
   assert.equal(merged[0].hash, '#uncommitted');
@@ -101,11 +101,18 @@ test('gitGraphBuildLayoutInput keeps git order, so a rebased parent with a newer
     { hash: 'child', parents: ['parent'], authorDate: '2024-01-01T00:00:00Z', commitDate: '2024-01-05T00:00:00Z', refs: { heads: [], remotes: [], tags: [] } },
     { hash: 'parent', parents: [], authorDate: '2024-01-03T00:00:00Z', commitDate: '2024-01-04T00:00:00Z', refs: { heads: [], remotes: [], tags: [] } },
   ];
-  const stashes = [{ hash: 's1', index: 0, baseHash: 'parent', message: 'WIP', date: '2024-01-06T00:00:00Z' }];
+  const stashes = [{ hash: 's1', index: 0, baseCommitHash: 'parent', message: 'WIP', date: '2024-01-06T00:00:00Z' }];
   const merged = render.gitGraphBuildLayoutInput(commits, stashes, null, 'child');
   const at = hash => merged.findIndex(r => r.hash === hash);
   assert.ok(at('child') < at('parent'));
   assert.ok(at('s1') < at('parent'), 'a stash stays above the commit it was taken from');
+});
+
+test('gitGraphBuildLayoutInput holds back a stash until the commit it was taken from is loaded', () => {
+  const commits = [{ hash: 'c1', parents: ['c0'], commitDate: '2024-01-02T00:00:00Z', refs: { heads: [], remotes: [], tags: [] } }];
+  const stashes = [{ hash: 's-old', index: 0, baseCommitHash: 'not-loaded', message: 'WIP', date: '2024-01-03T00:00:00Z' }];
+  const merged = render.gitGraphBuildLayoutInput(commits, stashes, null, 'c1');
+  assert.equal(merged.some(r => r.hash === 's-old'), false);
 });
 
 test('gitGraphFallbackLayout: a minimal one-lane-no-edges stand-in, used only when the real layout function is not loaded', () => {

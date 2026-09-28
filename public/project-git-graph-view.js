@@ -920,8 +920,14 @@ function gitGraphWireRows(project, state, body) {
     // second, separately-clipped copy of the full svg's markup per row
     // (every row repeating every other row's paths/circles) was O(rows²)
     // DOM nodes; this is O(rows).
+    const rowY = [];
+    tbody.querySelectorAll('.gg-row[data-row-index]').forEach((el) => {
+      rowY[Number(el.dataset.rowIndex)] = el.offsetTop + el.offsetHeight / 2;
+    });
+    const measured = rowY.length === state.rows.length && rowY.some(y => y > 0);
     const svg = gitGraphRenderGraphSvg(state.rows, state.layout, {
       style: state.graphStyle, uncommittedChangesStyle: state.uncommittedChangesStyle, palette: state.graphColours,
+      rowY: measured ? rowY : null, height: measured ? tbody.scrollHeight : null,
     });
     const clip = document.createElement('div');
     clip.className = 'gg-graph-clip'; // decorative only — clicks/right-clicks fall through to the row underneath
