@@ -4724,20 +4724,35 @@ body { display: flex; flex-direction: column; }
 
 .proj-drawer {
   margin: 0 8px 6px;
-  padding: 6px 4px 4px;
+  padding: 0 4px 4px;
   background: #141419;
   border: 1px solid rgba(120,130,255,0.18);
   border-top-color: rgba(255,255,255,0.06);
   border-radius: 0 0 8px 8px;
 }
 
-/* The drawer's first line: only the + for a new session, on the right. */
-.pdrawer-bar {
-  display: flex;
+/* The + for a new session: flat, at the right of the drawer's first line. */
+.pdrawer-new {
+  width: 20px;
+  height: 20px;
+  margin: -4px 0;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: #8088ff;
+  display: inline-flex;
   align-items: center;
-  padding: 0 2px 2px;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
 }
-.pdrawer-new { width: 20px; height: 20px; margin-left: auto; }
+.pdrawer-new:hover { background: rgba(120,130,255,0.16); color: #a6abff; }
+.proj-drawer .pane-empty { display: flex; align-items: center; gap: 8px; }
+/* In the Track view each heading's + starts a session in that track: flat
+   and blue like the project's +, always shown. */
+.proj-drawer .pane-sec-plus { opacity: 1; width: 20px; height: 20px; margin: -4px 0; border: none; background: none; color: #8088ff; }
+.proj-drawer .pane-sec-plus:hover { background: rgba(120,130,255,0.16); color: #a6abff; }
 
 .proj-drawer .pane-scroll { overflow: visible; padding-bottom: 2px; }
 .proj-drawer .pane-sec { padding: 8px 8px 3px; }

@@ -1048,18 +1048,28 @@ function projectDrawerStats(project) {
 }
 
 /**
- * The drawer under a project row: the + for a new session, then the
- * project's sessions, grouped the way the combo beside the search field says.
- * The plan and todo counts are on the row itself.
+ * The drawer under a project row: the project's sessions, grouped the way
+ * the combo beside the search field says. The plan and todo counts are on
+ * the row itself, and the + for a new session sits at the right of the
+ * list's first line (the first heading, or the empty note) rather than on a
+ * line of its own. In the Track view every heading has its own + already.
  */
 function buildProjectDrawer(project) {
   const wrap = document.createElement('div');
-  const bar = document.createElement('div');
-  bar.className = 'pdrawer-bar';
-  bar.innerHTML = `<button type="button" class="pane-icon-btn pane-icon-btn--primary pdrawer-new" title="New session in the project" aria-label="New session in the project">${PICONS.plus(12)}</button>`;
-  bar.querySelector('.pdrawer-new').onclick = (e) => showNewSessionMenu(findTreeProject(project.id) || project, null, e.currentTarget);
-  wrap.appendChild(bar);
-  wrap.appendChild(buildSessionPaneList(project));
+  const list = buildSessionPaneList(project);
+  const first = list.firstElementChild;
+  if (first && !first.querySelector('.pane-sec-plus')) {
+    const plus = document.createElement('button');
+    plus.type = 'button';
+    plus.className = 'pdrawer-new';
+    plus.title = 'New session in the project';
+    plus.setAttribute('aria-label', 'New session in the project');
+    plus.innerHTML = PICONS.plus(12);
+    plus.onclick = (e) => { e.stopPropagation(); showNewSessionMenu(findTreeProject(project.id) || project, null, e.currentTarget); };
+    if (!first.querySelector('.ws-flex')) first.insertAdjacentHTML('beforeend', '<span class="ws-flex"></span>');
+    first.appendChild(plus);
+  }
+  wrap.appendChild(list);
   return wrap;
 }
 
@@ -3118,7 +3128,7 @@ function buildSessionPaneList(project) {
   if (!groups.length) {
     const none = document.createElement('div');
     none.className = 'pane-empty';
-    none.textContent = 'No sessions yet. Start one from the + above.';
+    none.innerHTML = '<span>No sessions yet.</span>';
     scroll.appendChild(none);
   }
   for (const group of groups) {
