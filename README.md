@@ -163,11 +163,13 @@ The two CLIs handle this differently:
 - **Claude** loads the `CLAUDE.md` from each of those directories.
 - **Codex** only reads `AGENTS.md` from the folder it starts in, so a Codex session that starts in an attached folder does not see the project brief. Codex also refuses extra directories unless its sandbox is `workspace-write` or `danger-full-access`, so Switchboard's global default for Codex is `workspace-write`. Choose "Default" in Settings to hand the choice back to Codex's own config. Under `read-only` the extra directories are left off, since read-only can read every path anyway.
 
-### Overview and working mode
+### Overview, Session tab and sessions drawer
 
-The Projects tab lists projects only. Selecting one opens its **Overview**: the plan's progress, open todos, the newest files in the project folder, attached folders, files you've dropped in, and one card per track with its latest sessions. A file opens in the **Files** tab, which browses the whole project folder in the same viewer.
+The Projects tab lists projects. Selecting one opens its **Overview**: the plan's progress, open todos, the newest files in the project folder, attached folders, files you've dropped in, and one card per track with its latest sessions. A file opens in the **Files** tab, which browses the whole project folder in the same viewer.
 
-Opening a session from there switches to working mode: a slim project strip on top, a session list beside the terminal, and the plan and todo counts at the foot of the list.
+Opening a session, from the Overview or from the sidebar, opens the project's **Session** tab, right after Overview: the page header and tabs stay on top and the terminal fills the rest. Switching to another tab leaves the session running, and the Session tab brings it back.
+
+The chevron before a project in the sidebar opens its **sessions drawer** under the row: the project's sessions as one list, with the plan and todo counts (`Plan 1/3`, `Todos 2/3 open`) and a + for a new session on the same line as the grouping switch. Drawers start closed; only the chevron opens or closes them, and "Show all sessions" on a track card opens the drawer on that track.
 
 ![Project View session workspace](build/project-view-session.png)
 

@@ -14,19 +14,18 @@ function setup() {
   const state = { query: 'needle', displayQuery: '', titlesOnly: false, version: 0, ids: new Set() };
   const timers = new Map();
   const calls = [];
+  const redraws = [];
   let nextTimer = 0;
   const context = vm.createContext({
     clearTimeout: id => timers.delete(id),
     setTimeout: fn => { timers.set(++nextTimer, fn); return nextTimer; },
-    projectsUi: { working: true },
-    selectedProject: () => project,
-    projectPanes: { querySelector: () => null },
+    refreshProjectDrawer: id => redraws.push(id),
     cachedProjectTreeAll: { projects: [full, { id: 'other', sessions: [{ sessionId: 'outside' }] }] },
     projectSessionsAll: p => [...p.sessions, ...p.tracks.flatMap(t => t.sessions)],
     window: { api: { searchSessionIds: (query, ids) => new Promise(resolve => calls.push({ query, ids, resolve })) } },
   });
   vm.runInContext(controller, context);
-  return { project, state, timers, calls, update: () => context.updateProjectSessionSearch(project, state) };
+  return { project, state, timers, calls, redraws, update: () => context.updateProjectSessionSearch(project, state) };
 }
 
 test('title-only search is immediate and cancels a queued transcript search', () => {
@@ -78,4 +77,14 @@ test('transcript search uses loaded active/archived IDs and ignores stale replie
   await latest;
   assert.deepEqual([...s.state.ids], ['active']);
   assert.equal(s.state.pending, false);
+});
+
+test("every change redraws that project's drawer, pending or done", async () => {
+  const s = setup();
+  s.update();
+  assert.deepEqual(s.redraws, ['project'], 'the field and the last results show at once');
+  const request = [...s.timers.values()].at(-1)();
+  s.calls[0].resolve(['active']);
+  await request;
+  assert.deepEqual(s.redraws, ['project', 'project'], 'and again when the transcript search answers');
 });

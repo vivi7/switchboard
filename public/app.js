@@ -1188,7 +1188,7 @@ document.querySelectorAll('.sidebar-tab').forEach(tab => {
     const tabName = tab.dataset.tab;
     // The more button shares the tab styling but opens a menu instead.
     if (!tabName || tabName === activeTab) return;
-    // Leaving the Projects tab takes its page, strip and pane with it.
+    // Leaving the Projects tab takes its page and Session tab with it.
     if (activeTab === 'projects' && typeof leaveProjectViews === 'function') leaveProjectViews();
     activeTab = tabName;
     if (REMEMBERED_TABS.includes(tabName)) { try { localStorage.setItem(LAST_TAB_KEY, tabName); } catch {} }

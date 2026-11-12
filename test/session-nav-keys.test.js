@@ -24,7 +24,7 @@ function navContext({ tab = 'sessions', working = true, grid = false, mac = true
     gridViewActive: grid,
     projectsUi: { working },
     sidebarContent: rows(['s9', 's1', 's2', 's3']),
-    projectPanes: rows(['s3', 's1', 's2']),
+    workingSessionNavRows: () => rows(['s3', 's1', 's2']).querySelectorAll(),
     projectViewer: rows(['s2', 's1']),
     openSessions: new Map(['s1', 's2', 's3', 's9'].map(id => [id, { closed: false }])),
     activeSessionId: 's1',
@@ -49,7 +49,7 @@ function terminalHandler(context) {
 test('in a project, session navigation follows the project list, not the sidebar', () => {
   const working = navContext({ tab: 'projects' });
   working.context.navigateSession(-1);
-  assert.deepEqual(working.shown, ['s3'], 'the session before s1 in the project pane');
+  assert.deepEqual(working.shown, ['s3'], "the session before s1 in the project's drawer");
 
   const overview = navContext({ tab: 'projects', working: false });
   overview.context.navigateSession(-1);
