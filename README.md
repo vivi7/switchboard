@@ -169,7 +169,9 @@ The Projects tab lists projects. Selecting one opens its **Overview**: the plan'
 
 Opening a session, from the Overview or from the sidebar, opens the project's **Session** tab, right after Overview: the page header and tabs stay on top and the terminal fills the rest. Switching to another tab leaves the session running, and the Session tab brings it back.
 
-The chevron before a project in the sidebar opens its **sessions drawer** under the row: the plan and todo counts (`Plan 1/3`, `Todos 2/3 open`) with a + for a new session, then the project's sessions as one list. Drawers start closed; only the chevron opens or closes them, and "Show all sessions" on a track card opens the drawer on that track.
+Each project row's second line shows numbers only: plan phases done of all, todos open of all, tracks, sessions, then the latest activity (`43/60 · 26/26 · — · 2 · just now`). Pointing at a number shows what it counts ("Plan 43/60"); a long dash means none.
+
+The chevron before a project in the sidebar opens its **sessions drawer** under the row: the plan and todo counts (`Plan 1/3`, `Todos 2/3`) with a + for a new session, then the project's sessions as one list. Drawers start closed; only the chevron opens or closes them, and "Show all sessions" on a track card opens the drawer on that track.
 
 - **Search** — The field on top searches projects and sessions. A project with matching sessions shows with its drawer open and only those sessions in it, archived ones included.
 - **No project** — The last row, "No project", holds the sessions that belong to no project, by folder like the Sessions tab.

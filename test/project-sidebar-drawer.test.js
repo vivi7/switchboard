@@ -86,7 +86,8 @@ test('the drawer shows plan phases done of all and todos open of all', () => {
   assert.deepEqual({ ...numbers }, { planDone: 1, planTotal: 3, todosOpen: 2, todosTotal: 3 });
   const html = context.projectDrawerStatsHtml(numbers);
   assert.match(html, /<span>Plan<\/span> <b>1<\/b>\/3/);
-  assert.match(html, /<span>Todos<\/span> <b>2<\/b>\/3 open/);
+  assert.match(html, /<span>Todos<\/span> <b>2<\/b>\/3</);
+  assert.doesNotMatch(html, / open</, 'the todos shown are the open ones; the word adds nothing');
   assert.match(html, /title="1 of 3 phases done\. Open plan-tracker\.md"/);
   assert.match(html, /title="2 open of 3 todos\. Open todos\.md"/);
   assert.match(html, /data-file="plan-tracker\.md"/);
@@ -101,13 +102,49 @@ test('a project with no plan or todos shows a dash, not 0/0', () => {
   assert.doesNotMatch(html, /0\/0/);
 });
 
+// --- The project row's second line: numbers only, the word on hover ---
+
+function subline({ files = {}, tracks = 0, sessions = 0, tail = '7m ago' } = {}) {
+  const context = vm.createContext({
+    parsePlan, parseTodos,
+    fileContent: (_project, name) => files[name] ?? null,
+    projectSessionsAll: p => p.sessions,
+    escapeHtml: text => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;'),
+  });
+  vm.runInContext(between('function projectRowStats(', '/** What follows the numbers'), context);
+  vm.runInContext(between('function projectSubline(', '/** Put the current second line on a row'), context);
+  vm.runInContext(between('function projectDrawerStats(', '/** "Plan 1/3"'), context);
+  context.projectSublineTail = () => tail;
+  const project = { id: 'p1', tracks: Array.from({ length: tracks }, (_, i) => ({ id: 't' + i })), sessions: Array.from({ length: sessions }, (_, i) => ({ sessionId: 's' + i })) };
+  return { text: context.projectSubline(project), html: context.projectSublineHtml(project) };
+}
+
+test('the second line lists plan, todos, tracks and sessions as numbers, then the time', () => {
+  const { text, html } = subline({
+    files: { 'plan-tracker.md': '## [x] Phase 1: One\n- [x] a\n\n## Phase 2: Two\n- [ ] b\n', 'todos.md': '- [ ] a\n- [x] b\n- [ ] c\n' },
+    tracks: 3, sessions: 36,
+  });
+  assert.equal(text, 'Plan 1/2 · Todos 2/3 · Tracks 3 · Sessions 36 · 7m ago');
+  const shown = html.replace(/<span class="proj-stat-label">[^<]*<\/span>/g, '').replace(/<[^>]+>/g, '');
+  assert.equal(shown, '1/2 · 2/3 · 3 · 36 · 7m ago', 'without the pointer only the numbers show');
+  assert.match(html, /data-stat="plan"><span class="proj-stat-label">Plan&nbsp;<\/span>1\/2/);
+  assert.match(html, /data-stat="sessions"><span class="proj-stat-label">Sessions&nbsp;<\/span>36/);
+});
+
+test('none is a long dash, and unread plan files show as still loading', () => {
+  const empty = subline({ files: { 'plan-tracker.md': '', 'todos.md': '' } });
+  assert.equal(empty.text, 'Plan — · Todos — · Tracks — · Sessions — · 7m ago');
+  const loading = subline({ files: {}, tracks: 1, sessions: 2, tail: '' });
+  assert.equal(loading.text, 'Plan … · Todos … · Tracks 1 · Sessions 2');
+});
+
 // --- Redrawing a drawer ---
 
 function redraw(current, next) {
   const replaced = [];
   const el = { innerHTML: current, replaceChildren: (...nodes) => replaced.push(nodes) };
   const context = vm.createContext({});
-  vm.runInContext(between('function replaceDrawerContent(', 'const drawerFilesLoading'), context);
+  vm.runInContext(between('function replaceDrawerContent(', 'const projectCountsLoading'), context);
   const changed = context.replaceDrawerContent(el, { innerHTML: next, childNodes: ['bar', 'list'] });
   return { changed, replaced };
 }

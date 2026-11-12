@@ -721,9 +721,7 @@ function updateProjectStatusDots() {
     const project = findTreeProject(row.dataset.projectId);
     if (!project) return;
     applyState(row, projectDotState(project));
-    const subline = row.querySelector('.proj-sub');
-    const text = projectSubline(project);
-    if (subline && subline.textContent !== text) subline.textContent = text;
+    applyProjectSubline(row, project);
   });
   document.querySelectorAll('.tcard[data-track-key]').forEach(el => {
     const project = findTreeProject(el.dataset.projectId);
@@ -767,17 +765,63 @@ function projectSortTime(project) {
   return Number.isFinite(t) ? t : 0;
 }
 
+/**
+ * The numbers on a project row's second line, in order: plan phases done of
+ * all, todos open of all, tracks, sessions. A long dash stands for none, so
+ * there is still something to point at; "…" means the plan files are still
+ * being read.
+ */
+function projectRowStats(project) {
+  const loaded = fileContent(project, 'plan-tracker.md') !== null && fileContent(project, 'todos.md') !== null;
+  const counts = loaded ? projectDrawerStats(project) : null;
+  const tracks = (project.tracks || []).length;
+  const sessions = projectSessionsAll(project).length;
+  const ratio = (part, whole) => (!counts ? '…' : whole ? `${part}/${whole}` : '—');
+  return [
+    { key: 'plan', label: 'Plan', value: ratio(counts?.planDone, counts?.planTotal) },
+    { key: 'todos', label: 'Todos', value: ratio(counts?.todosOpen, counts?.todosTotal) },
+    { key: 'tracks', label: 'Tracks', value: tracks ? String(tracks) : '—' },
+    { key: 'sessions', label: 'Sessions', value: sessions ? String(sessions) : '—' },
+  ];
+}
+
+/** What follows the numbers: needs input, a snooze, or the latest activity. */
+function projectSublineTail(project) {
+  const state = groupState(projectSessionsAll(project));
+  if (state === 'attention') return 'needs input';
+  if (projectSnoozed(project, Date.now())) return `wakes ${snoozeWakeDescription(project.snoozedUntil)}`;
+  if (projectWokeAt(project, Date.now())) return `woke ${formatDate(new Date(project.snoozedUntil))}`;
+  if (projectSortTime(project)) return formatDate(new Date(projectSortTime(project)));
+  return '';
+}
+
+/** The second line in words, for screen readers and tooltips. */
 function projectSubline(project) {
-  const sessions = projectSessionsAll(project);
-  const state = groupState(sessions);
-  const trackCount = (project.tracks || []).length;
-  const parts = [trackCount ? `${trackCount} track${trackCount === 1 ? '' : 's'}` : 'no tracks'];
-  parts.push(`${sessions.length} session${sessions.length === 1 ? '' : 's'}`);
-  if (state === 'attention') parts.push('needs input');
-  else if (projectSnoozed(project, Date.now())) parts.push(`wakes ${snoozeWakeDescription(project.snoozedUntil)}`);
-  else if (projectWokeAt(project, Date.now())) parts.push(`woke ${formatDate(new Date(project.snoozedUntil))}`);
-  else if (projectSortTime(project)) parts.push(formatDate(new Date(projectSortTime(project))));
+  const parts = projectRowStats(project).map(stat => `${stat.label} ${stat.value}`);
+  const tail = projectSublineTail(project);
+  if (tail) parts.push(tail);
   return parts.join(' · ');
+}
+
+/**
+ * The second line as shown: only the numbers, each widening to show its
+ * word ("Plan 100/154") while the pointer is on it.
+ */
+function projectSublineHtml(project) {
+  const parts = projectRowStats(project).map(stat =>
+    `<span class="proj-stat" data-stat="${stat.key}"><span class="proj-stat-label">${stat.label}&nbsp;</span>${escapeHtml(stat.value)}</span>`);
+  const tail = projectSublineTail(project);
+  if (tail) parts.push(`<span class="proj-stat-tail">${escapeHtml(tail)}</span>`);
+  return parts.join('<span class="proj-stat-sep"> · </span>');
+}
+
+/** Put the current second line on a row, leaving it alone when nothing changed. */
+function applyProjectSubline(row, project) {
+  const subline = row.querySelector('.proj-sub');
+  if (!subline) return;
+  const html = projectSublineHtml(project);
+  if (subline.innerHTML !== html) subline.innerHTML = html;
+  subline.setAttribute('aria-label', projectSubline(project));
 }
 
 /** A separate badge for task processes, alongside the session status. */
@@ -814,7 +858,7 @@ function buildProjectRow(project) {
   const toggleLabel = expanded ? 'Hide sessions' : 'Show sessions';
   row.innerHTML = `<button type="button" class="proj-expand" aria-expanded="${expanded}" aria-controls="proj-drawer-${escapeHtml(project.id)}" aria-label="${toggleLabel}" title="${toggleLabel}">${PICONS.chevronRight(11)}</button>` +
     markHtml(project, 28) +
-    `<span class="proj-text"><span class="proj-name">${escapeHtml(project.name)}</span><span class="proj-sub">${escapeHtml(projectSubline(project))}</span></span>` +
+    `<span class="proj-text"><span class="proj-name">${escapeHtml(project.name)}</span><span class="proj-sub" aria-label="${escapeHtml(projectSubline(project))}">${projectSublineHtml(project)}</span></span>` +
     `<span class="proj-status"><span class="proj-task-indicator" role="img">${PICONS.play(10)}<span class="proj-task-running-count"></span></span>${stateDot(state)}${runningCount ? `<span class="proj-count">${runningCount}</span>` : ''}</span>`;
   updateProjectTaskIndicator(row, project);
   return row;
@@ -928,6 +972,8 @@ function renderProjectList() {
   });
   bindProjectList();
   refreshProjectDrawers();
+  // Every row shows plan and todo counts: read those two files once per project.
+  for (const project of projects) loadProjectCounts(project);
   // Every project, not the search's subset: a wake outside the filter still changes the shelf count.
   const all = tree?.projects || [];
   projectsUi.snoozedKey = projectSnoozedKey(all);
@@ -1001,13 +1047,13 @@ function projectDrawerStats(project) {
   };
 }
 
-/** "Plan 1/3" and "Todos 2/3 open", in place of the old progress bar and footer. */
+/** "Plan 1/3" and "Todos 2/3" (open of all), in place of the old progress bar and footer. */
 function projectDrawerStatsHtml(stats) {
   const plan = stats.planTotal
     ? `<span>Plan</span> <b>${stats.planDone}</b>/${stats.planTotal}`
     : '<span>Plan</span> —';
   const todos = stats.todosTotal
-    ? `<span>Todos</span> <b>${stats.todosOpen}</b>/${stats.todosTotal} open`
+    ? `<span>Todos</span> <b>${stats.todosOpen}</b>/${stats.todosTotal}`
     : '<span>Todos</span> —';
   const planTitle = stats.planTotal
     ? `${stats.planDone} of ${stats.planTotal} phase${stats.planTotal === 1 ? '' : 's'} done. Open plan-tracker.md`
@@ -1050,18 +1096,32 @@ function replaceDrawerContent(el, next) {
   return true;
 }
 
-const drawerFilesLoading = new Set();
+const projectCountsLoading = new Set();
+
+/**
+ * Plan and todo counts come from the project folder: read plan-tracker.md and
+ * todos.md once, then show them on the row and in its drawer. Later changes
+ * arrive through onProjectPlanChanged.
+ */
+function loadProjectCounts(project) {
+  const unread = fileContent(project, 'plan-tracker.md') === null || fileContent(project, 'todos.md') === null;
+  if (!unread || projectCountsLoading.has(project.id)) return;
+  projectCountsLoading.add(project.id);
+  loadProjectFiles(project, { names: ['plan-tracker.md', 'todos.md'] })
+    .finally(() => projectCountsLoading.delete(project.id))
+    .then(() => refreshProjectCounts(project.id));
+}
+
+/** Show a project's plan and todo counts again: its row's second line and its drawer. */
+function refreshProjectCounts(projectId) {
+  const project = findTreeProject(projectId);
+  const row = project && document.getElementById('proj-' + projectId);
+  if (row) applyProjectSubline(row, project);
+  refreshProjectDrawer(projectId);
+}
 
 function renderProjectDrawer(project, el) {
-  // Plan and todo counts come from the project folder; read them once. Later
-  // changes arrive through onProjectPlanChanged.
-  const unread = fileContent(project, 'plan-tracker.md') === null || fileContent(project, 'todos.md') === null;
-  if (unread && !drawerFilesLoading.has(project.id)) {
-    drawerFilesLoading.add(project.id);
-    loadProjectFiles(project)
-      .finally(() => drawerFilesLoading.delete(project.id))
-      .then(() => refreshProjectDrawer(project.id));
-  }
+  loadProjectCounts(project);
   replaceDrawerContent(el, buildProjectDrawer(project));
 }
 
@@ -1814,8 +1874,7 @@ function trackGroupIndex(project, key) {
 function fileKey(project, name) { return `${project.id}:${name}`; }
 function fileContent(project, name) { return projectsUi.files.get(fileKey(project, name))?.content ?? null; }
 
-async function loadProjectFiles(project, { force = false } = {}) {
-  const names = ['CLAUDE.md', 'plan.md', 'plan-tracker.md', 'todos.md'];
+async function loadProjectFiles(project, { force = false, names = ['CLAUDE.md', 'plan.md', 'plan-tracker.md', 'todos.md'] } = {}) {
   await Promise.all(names.map(async name => {
     const key = fileKey(project, name);
     const cached = projectsUi.files.get(key);
@@ -2265,8 +2324,8 @@ window.api.onProjectPlanChanged?.((projectId) => {
   // The cached plan is kept: renderPlanTab refetches and only redraws when the
   // plan or the todos actually moved, so the tab never blanks.
   loadProjectFiles(project, { force: true }).then(() => {
-    // The drawer counts plan phases and todos for any project, selected or not.
-    refreshProjectDrawer(projectId);
+    // The row and the drawer count plan phases and todos for any project, selected or not.
+    refreshProjectCounts(projectId);
     if (selectedProject()?.id !== projectId || activeTab !== 'projects') return;
     if (projectsUi.working) { renderPlanMeta(project); return; }
     if (projectViewer && projectViewer.style.display !== 'none') {

@@ -4820,6 +4820,27 @@ body { display: flex; flex-direction: column; }
   text-overflow: ellipsis;
 }
 
+/* The second line shows only numbers (plan, todos, tracks, sessions); the
+   word for one slides in while the pointer is on it. */
+.proj-stat {
+  font-variant-numeric: tabular-nums;
+  padding: 0 1px;
+  border-radius: 3px;
+  transition: color 0.12s;
+}
+.proj-stat-label {
+  display: inline-block;
+  max-width: 0;
+  overflow: hidden;
+  vertical-align: bottom;
+  white-space: nowrap;
+  opacity: 0;
+  transition: max-width 0.15s ease, opacity 0.15s ease;
+}
+.proj-stat:hover { color: #d0d0e8; }
+.proj-stat:hover .proj-stat-label { max-width: 72px; opacity: 1; }
+.proj-stat-sep { color: #5a5a72; }
+
 .proj-status {
   display: flex;
   align-items: center;
