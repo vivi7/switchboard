@@ -4731,29 +4731,12 @@ body { display: flex; flex-direction: column; }
   border-radius: 0 0 8px 8px;
 }
 
-/* Plan and todo counts on the left, the + for a new session on the right. */
+/* The drawer's first line: only the + for a new session, on the right. */
 .pdrawer-bar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 2px;
-  padding: 0 2px 4px;
+  padding: 0 2px 2px;
 }
-.pdrawer-stat {
-  padding: 2px 5px;
-  border: none;
-  border-radius: 5px;
-  background: none;
-  font-family: inherit;
-  font-size: 10.5px;
-  color: #7a7a90;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-}
-.pdrawer-stat span { color: #6a6a80; }
-.pdrawer-stat b { color: #d0d0e8; font-weight: 600; }
-.pdrawer-stat:hover { background: rgba(255,255,255,0.06); color: #b0b0c4; }
 .pdrawer-new { width: 20px; height: 20px; margin-left: auto; }
 
 .proj-drawer .pane-scroll { overflow: visible; padding-bottom: 2px; }

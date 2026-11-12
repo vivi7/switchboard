@@ -1035,7 +1035,7 @@ function toggleProjectDrawer(projectId) {
   renderProjectList();
 }
 
-/** Plan phases done of all, todos open of all: the numbers the drawer shows. */
+/** Plan phases done of all, todos open of all: the counts on a project row. */
 function projectDrawerStats(project) {
   const plan = parsePlan(fileContent(project, 'plan-tracker.md'));
   const todos = parseTodos(fileContent(project, 'todos.md'));
@@ -1047,38 +1047,16 @@ function projectDrawerStats(project) {
   };
 }
 
-/** "Plan 1/3" and "Todos 2/3" (open of all), in place of the old progress bar and footer. */
-function projectDrawerStatsHtml(stats) {
-  const plan = stats.planTotal
-    ? `<span>Plan</span> <b>${stats.planDone}</b>/${stats.planTotal}`
-    : '<span>Plan</span> —';
-  const todos = stats.todosTotal
-    ? `<span>Todos</span> <b>${stats.todosOpen}</b>/${stats.todosTotal}`
-    : '<span>Todos</span> —';
-  const planTitle = stats.planTotal
-    ? `${stats.planDone} of ${stats.planTotal} phase${stats.planTotal === 1 ? '' : 's'} done. Open plan-tracker.md`
-    : 'No phases yet. Open plan-tracker.md';
-  const todosTitle = stats.todosTotal
-    ? `${stats.todosOpen} open of ${stats.todosTotal} todo${stats.todosTotal === 1 ? '' : 's'}. Open todos.md`
-    : 'No todos yet. Open todos.md';
-  return `<button type="button" class="pdrawer-stat" data-file="plan-tracker.md" title="${planTitle}">${plan}</button>` +
-    `<button type="button" class="pdrawer-stat" data-file="todos.md" title="${todosTitle}">${todos}</button>`;
-}
-
 /**
- * The drawer under a project row: plan and todo counts with the + for a new
- * session, then the project's sessions, grouped the way the combo beside the
- * search field says.
+ * The drawer under a project row: the + for a new session, then the
+ * project's sessions, grouped the way the combo beside the search field says.
+ * The plan and todo counts are on the row itself.
  */
 function buildProjectDrawer(project) {
   const wrap = document.createElement('div');
   const bar = document.createElement('div');
   bar.className = 'pdrawer-bar';
-  bar.innerHTML = projectDrawerStatsHtml(projectDrawerStats(project)) +
-    `<button type="button" class="pane-icon-btn pane-icon-btn--primary pdrawer-new" title="New session in the project" aria-label="New session in the project">${PICONS.plus(12)}</button>`;
-  bar.querySelectorAll('.pdrawer-stat').forEach(btn => {
-    btn.onclick = () => openProjectFileInEditor(findTreeProject(project.id) || project, btn.dataset.file);
-  });
+  bar.innerHTML = `<button type="button" class="pane-icon-btn pane-icon-btn--primary pdrawer-new" title="New session in the project" aria-label="New session in the project">${PICONS.plus(12)}</button>`;
   bar.querySelector('.pdrawer-new').onclick = (e) => showNewSessionMenu(findTreeProject(project.id) || project, null, e.currentTarget);
   wrap.appendChild(bar);
   wrap.appendChild(buildSessionPaneList(project));
@@ -1112,7 +1090,7 @@ function loadProjectCounts(project) {
     .then(() => refreshProjectCounts(project.id));
 }
 
-/** Show a project's plan and todo counts again: its row's second line and its drawer. */
+/** Show a project's plan and todo counts again on its row (and redraw its drawer). */
 function refreshProjectCounts(projectId) {
   const project = findTreeProject(projectId);
   const row = project && document.getElementById('proj-' + projectId);

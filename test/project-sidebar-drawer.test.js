@@ -66,42 +66,6 @@ test("the Session tab only shows the project's own session", () => {
   assert.equal(context.projectTabSession(project), null);
 });
 
-// --- Plan and todo counts on the drawer's bar ---
-
-function stats(files) {
-  const context = vm.createContext({
-    parsePlan, parseTodos,
-    fileContent: (_project, name) => files[name] ?? null,
-  });
-  vm.runInContext(between('function projectDrawerStats(', '/**\n * The drawer under a project row'), context);
-  return context;
-}
-
-test('the drawer shows plan phases done of all and todos open of all', () => {
-  const context = stats({
-    'plan-tracker.md': '## [x] Phase 1: One\n- [x] a\n\n## Phase 2: Two\n- [ ] b\n\n## Phase 3: Three\n- [ ] c\n',
-    'todos.md': '- [ ] first\n- [x] second\n- [ ] third\n',
-  });
-  const numbers = context.projectDrawerStats({ id: 'p1' });
-  assert.deepEqual({ ...numbers }, { planDone: 1, planTotal: 3, todosOpen: 2, todosTotal: 3 });
-  const html = context.projectDrawerStatsHtml(numbers);
-  assert.match(html, /<span>Plan<\/span> <b>1<\/b>\/3/);
-  assert.match(html, /<span>Todos<\/span> <b>2<\/b>\/3</);
-  assert.doesNotMatch(html, / open</, 'the todos shown are the open ones; the word adds nothing');
-  assert.match(html, /title="1 of 3 phases done\. Open plan-tracker\.md"/);
-  assert.match(html, /title="2 open of 3 todos\. Open todos\.md"/);
-  assert.match(html, /data-file="plan-tracker\.md"/);
-  assert.match(html, /data-file="todos\.md"/);
-});
-
-test('a project with no plan or todos shows a dash, not 0/0', () => {
-  const context = stats({ 'plan-tracker.md': '', 'todos.md': '' });
-  const html = context.projectDrawerStatsHtml(context.projectDrawerStats({ id: 'p1' }));
-  assert.match(html, /<span>Plan<\/span> —/);
-  assert.match(html, /<span>Todos<\/span> —/);
-  assert.doesNotMatch(html, /0\/0/);
-});
-
 // --- The project row's second line: numbers only, the word on hover ---
 
 function subline({ files = {}, tracks = 0, sessions = 0, tail = '7m ago' } = {}) {
@@ -113,7 +77,7 @@ function subline({ files = {}, tracks = 0, sessions = 0, tail = '7m ago' } = {})
   });
   vm.runInContext(between('function projectRowStats(', '/** What follows the numbers'), context);
   vm.runInContext(between('function projectSubline(', '/** Put the current second line on a row'), context);
-  vm.runInContext(between('function projectDrawerStats(', '/** "Plan 1/3"'), context);
+  vm.runInContext(between('function projectDrawerStats(', '/**\n * The drawer under a project row'), context);
   context.projectSublineTail = () => tail;
   const project = { id: 'p1', tracks: Array.from({ length: tracks }, (_, i) => ({ id: 't' + i })), sessions: Array.from({ length: sessions }, (_, i) => ({ sessionId: 's' + i })) };
   return { text: context.projectSubline(project), html: context.projectSublineHtml(project) };
