@@ -1209,6 +1209,8 @@ document.querySelectorAll('.sidebar-tab').forEach(tab => {
     memoryContent.style.display = 'none';
     sessionFilters.style.display = 'none';
     searchBar.style.display = 'none';
+    // The grouping combo beside the field belongs to the Projects tab.
+    searchBar.classList.remove('with-group');
 
     // Sessions and Projects share the main area: the grid, the active
     // terminal, or the placeholder.
@@ -1242,7 +1244,8 @@ document.querySelectorAll('.sidebar-tab').forEach(tab => {
       }
     } else if (tabName === 'projects') {
       searchBar.style.display = '';
-      searchInput.placeholder = 'Search projects...';
+      searchBar.classList.add('with-group');
+      searchInput.placeholder = 'Search projects and sessions...';
       projectsContent.style.display = '';
       if (projectsChangedWhileAway) {
         projectsChangedWhileAway = false;

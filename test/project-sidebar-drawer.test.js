@@ -6,6 +6,9 @@ const vm = require('node:vm');
 
 const { parsePlan, parseTodos } = require('../public/plan-parser');
 
+// Arrays built inside a vm context have that context's prototypes.
+const plain = value => JSON.parse(JSON.stringify(value));
+
 const source = fs.readFileSync(path.join(__dirname, '../public/projects-view.js'), 'utf8');
 const between = (from, to) => {
   const start = source.indexOf(from);
@@ -70,7 +73,7 @@ function stats(files) {
     parsePlan, parseTodos,
     fileContent: (_project, name) => files[name] ?? null,
   });
-  vm.runInContext(between('function projectDrawerStats(', '/**\n * Everything the old Sessions column showed'), context);
+  vm.runInContext(between('function projectDrawerStats(', '/**\n * The drawer under a project row'), context);
   return context;
 }
 
@@ -100,37 +103,112 @@ test('a project with no plan or todos shows a dash, not 0/0', () => {
 
 // --- Redrawing a drawer ---
 
-function drawer({ current, next, focused = false }) {
+function redraw(current, next) {
   const replaced = [];
-  const focus = [];
-  const input = { selectionStart: 2, selectionEnd: 4 };
-  const fresh = { focus: () => focus.push('focus'), setSelectionRange: (a, b) => focus.push([a, b]) };
-  const el = {
-    innerHTML: current,
-    querySelector: () => (replaced.length ? fresh : input),
-    replaceChildren: (...nodes) => replaced.push(nodes),
-  };
-  const context = vm.createContext({
-    document: { activeElement: focused ? input : null },
-    fileContent: () => '',
-    loadProjectFiles: () => Promise.resolve(),
-    refreshProjectDrawer() {},
-    buildProjectDrawer: () => ({ innerHTML: next, childNodes: ['bar', 'search', 'list'] }),
-  });
-  vm.runInContext(between('const drawerFilesLoading', '/** Redraw one project\'s drawer, if it is open. */'), context);
-  context.renderProjectDrawer({ id: 'p1' }, el);
-  return { replaced, focus };
+  const el = { innerHTML: current, replaceChildren: (...nodes) => replaced.push(nodes) };
+  const context = vm.createContext({});
+  vm.runInContext(between('function replaceDrawerContent(', 'const drawerFilesLoading'), context);
+  const changed = context.replaceDrawerContent(el, { innerHTML: next, childNodes: ['bar', 'list'] });
+  return { changed, replaced };
 }
 
 test('a drawer whose rows did not change is left alone', () => {
-  const { replaced } = drawer({ current: '<b>same</b>', next: '<b>same</b>' });
-  assert.equal(replaced.length, 0);
+  const { changed, replaced } = redraw('<b>same</b>', '<b>same</b>');
+  assert.equal(changed, false);
+  assert.equal(replaced.length, 0, 'no flicker under the pointer while a session writes');
 });
 
-test('a changed drawer is rebuilt and keeps the cursor in its search field', () => {
-  const { replaced, focus } = drawer({ current: '<b>old</b>', next: '<b>new</b>', focused: true });
-  assert.deepEqual(replaced, [['bar', 'search', 'list']]);
-  assert.deepEqual(focus, ['focus', [2, 4]]);
+test('a changed drawer gets the new content', () => {
+  const { changed, replaced } = redraw('<b>old</b>', '<b>new</b>');
+  assert.equal(changed, true);
+  assert.deepEqual(replaced, [['bar', 'list']]);
+});
+
+// --- The sidebar search opens the drawers that hold matches ---
+
+function drawers({ matches = null, expanded = {} } = {}) {
+  const projects = [
+    { id: 'p1', sessions: [{ sessionId: 'a' }], tracks: [{ sessions: [{ sessionId: 'b', archived: 1 }] }] },
+    { id: 'p2', sessions: [{ sessionId: 'c' }], tracks: [] },
+  ];
+  let renders = 0;
+  const context = vm.createContext({
+    searchMatchIds: matches ? new Set(matches) : null,
+    projectsUi: { expandedProjects: { ...expanded }, searchDrawerOverride: new Map() },
+    cachedProjectTreeAll: { projects },
+    projectSessionsAll: p => [...p.sessions, ...p.tracks.flatMap(t => t.sessions)],
+    sessionEventTime: () => 0,
+    findTreeProject: id => projects.find(p => p.id === id),
+    saveProjectsUi() {},
+    renderProjectList: () => renders++,
+  });
+  vm.runInContext(between('function projectSearchMatches(', '/** Plan phases done of all'), context);
+  return { context, projects, renders: () => renders };
+}
+
+test('without a search only the chevron opens a drawer', () => {
+  const { context, projects } = drawers({ expanded: { p2: true } });
+  assert.equal(context.projectDrawerOpen(projects[0]), false);
+  assert.equal(context.projectDrawerOpen(projects[1]), true);
+  context.toggleProjectDrawer('p1');
+  assert.equal(context.projectDrawerOpen(projects[0]), true);
+  assert.equal(context.projectsUi.expandedProjects.p1, true);
+});
+
+test('a search opens the drawers with matching sessions, archived ones included', () => {
+  const { context, projects } = drawers({ matches: ['b'] });
+  assert.deepEqual(context.projectSearchMatches(projects[0]).map(s => s.sessionId), ['b']);
+  assert.equal(context.projectDrawerOpen(projects[0]), true, 'the archived match counts');
+  assert.equal(context.projectDrawerOpen(projects[1]), false, 'no match, still closed');
+});
+
+test('closing a drawer during a search keeps it closed for that search only', () => {
+  const { context, projects } = drawers({ matches: ['a'], expanded: { p1: true } });
+  context.toggleProjectDrawer('p1');
+  assert.equal(context.projectDrawerOpen(projects[0]), false, 'the click wins over the match');
+  assert.equal(context.projectsUi.expandedProjects.p1, undefined, 'and is remembered after the search');
+  context.searchMatchIds = null;
+  context.projectsUi.searchDrawerOverride.clear();
+  assert.equal(context.projectDrawerOpen(projects[0]), false);
+});
+
+// --- "No project": the sessions outside every project ---
+
+function others({ matches = null, archived = false } = {}) {
+  const at = t => ({ t });
+  const folders = [
+    { projectPath: '/w/old', sessions: [{ sessionId: 'o1', ...at(10) }] },
+    { projectPath: '/w/app', sessions: [{ sessionId: 'a1', ...at(20) }, { sessionId: 'a2', ...at(50), projectId: 'p1' }, { sessionId: 'a3', ...at(30) }] },
+    { projectPath: '/w/filed', sessions: [{ sessionId: 'f1', ...at(99), projectId: 'p1' }] },
+  ];
+  const all = [...folders, { projectPath: '/w/archive', sessions: [{ sessionId: 'z1', archived: 1, ...at(5) }] }];
+  const context = vm.createContext({
+    searchMatchIds: matches ? new Set(matches) : null,
+    showArchived: archived,
+    cachedProjects: folders,
+    cachedAllProjects: all,
+    projectForSession: s => (s.projectId ? { project: { id: s.projectId } } : null),
+    sessionEventTime: s => s.t,
+    projectsUi: { otherOpen: false, searchDrawerOverride: new Map() },
+  });
+  vm.runInContext(between('function sessionsWithoutProject(', 'function toggleOtherSessions('), context);
+  return context;
+}
+
+test('sessions outside every project, by folder, newest folder and session first', () => {
+  const groups = others().sessionsWithoutProject();
+  assert.deepEqual(plain(groups.map(g => [g.folder.projectPath, g.sessions.map(s => s.sessionId)])), [
+    ['/w/app', ['a3', 'a1']],
+    ['/w/old', ['o1']],
+  ], 'a session filed in a project and a folder with only those stay out');
+});
+
+test('archived sessions follow the Archive switch, and a search narrows the list', () => {
+  assert.deepEqual(plain(others({ archived: true }).sessionsWithoutProject().map(g => g.folder.projectPath)), ['/w/app', '/w/old', '/w/archive']);
+  const searching = others({ matches: ['o1', 'z1'] });
+  assert.deepEqual(plain(searching.sessionsWithoutProject().map(g => g.sessions.map(s => s.sessionId))), [['o1'], ['z1']]);
+  assert.equal(searching.otherSessionsOpen(), true, 'a search opens the row');
+  assert.equal(others().otherSessionsOpen(), false, 'closed by default');
 });
 
 // --- Cmd+Shift+[ / ] while a session is open ---
@@ -154,4 +232,25 @@ function navRows({ drawerOpen }) {
 test('session navigation follows the open drawer, or its grouping when closed', () => {
   assert.deepEqual(navRows({ drawerOpen: true }), ['c', 'a']);
   assert.deepEqual(navRows({ drawerOpen: false }), ['a', 'b', 'c']);
+});
+
+function tabRows({ working = false, active = null, viewerShown = true }) {
+  const row = id => ({ dataset: { sessionId: id } });
+  const context = vm.createContext({
+    projectsUi: { working },
+    workingSessionNavRows: () => [row('drawer')],
+    activeSessionId: active,
+    sessionMap: new Map([['loose', { sessionId: 'loose' }], ['filed', { sessionId: 'filed', projectId: 'p1' }]]),
+    projectForSession: s => (s.projectId ? { project: { id: s.projectId } } : null),
+    projectViewer: { style: { display: viewerShown ? 'flex' : 'none' }, querySelectorAll: () => [row('card')] },
+    document: { getElementById: id => (id === 'proj-drawer-other' ? { querySelectorAll: () => [row('other')] } : null) },
+  });
+  vm.runInContext(between('function projectsTabNavRows(', 'function workingSessionNavRows('), context);
+  return plain(context.projectsTabNavRows().map(r => r.dataset.sessionId));
+}
+
+test('in the Projects tab, navigation follows the list the session on screen came from', () => {
+  assert.deepEqual(tabRows({ working: true }), ['drawer'], 'Session tab: the project drawer');
+  assert.deepEqual(tabRows({ active: 'loose', viewerShown: false }), ['other'], 'a session outside every project: the No project list');
+  assert.deepEqual(tabRows({ active: 'filed' }), ['card'], 'the page: its track cards');
 });

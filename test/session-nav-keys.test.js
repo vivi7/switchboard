@@ -24,8 +24,9 @@ function navContext({ tab = 'sessions', working = true, grid = false, mac = true
     gridViewActive: grid,
     projectsUi: { working },
     sidebarContent: rows(['s9', 's1', 's2', 's3']),
-    workingSessionNavRows: () => rows(['s3', 's1', 's2']).querySelectorAll(),
-    projectViewer: rows(['s2', 's1']),
+    // projects-view.js picks the Projects tab's list: the open project's
+    // drawer while a session shows, the page's track cards otherwise.
+    projectsTabNavRows: () => (working ? rows(['s3', 's1', 's2']) : rows(['s2', 's1'])).querySelectorAll(),
     openSessions: new Map(['s1', 's2', 's3', 's9'].map(id => [id, { closed: false }])),
     activeSessionId: 's1',
     gridFocusedSessionId: null,

@@ -169,11 +169,14 @@ The Projects tab lists projects. Selecting one opens its **Overview**: the plan'
 
 Opening a session, from the Overview or from the sidebar, opens the project's **Session** tab, right after Overview: the page header and tabs stay on top and the terminal fills the rest. Switching to another tab leaves the session running, and the Session tab brings it back.
 
-The chevron before a project in the sidebar opens its **sessions drawer** under the row: the project's sessions as one list, with the plan and todo counts (`Plan 1/3`, `Todos 2/3 open`) and a + for a new session on the same line as the grouping switch. Drawers start closed; only the chevron opens or closes them, and "Show all sessions" on a track card opens the drawer on that track.
+The chevron before a project in the sidebar opens its **sessions drawer** under the row: the plan and todo counts (`Plan 1/3`, `Todos 2/3 open`) with a + for a new session, then the project's sessions as one list. Drawers start closed; only the chevron opens or closes them, and "Show all sessions" on a track card opens the drawer on that track.
+
+- **Search** — The field on top searches projects and sessions. A project with matching sessions shows with its drawer open and only those sessions in it, archived ones included.
+- **No project** — The last row, "No project", holds the sessions that belong to no project, by folder like the Sessions tab.
 
 ![Project View session workspace](build/project-view-session.png)
 
-- **Grouping** — Group the list by **Time** (today, yesterday, this week...), **Track**, or **State** (needs input, running, idle).
+- **Grouping** — The combo beside the search field groups every drawer by **Time** (today, yesterday, this week...), **Track**, or **State** (needs input, running, idle).
 - **Rows** — Each row shows the title, the track, the CLI, its age, and message count. Right-click a project, track, or session for its actions.
 - **Ordering** — Projects and sessions are ordered by their last event: a new session started, a turn finished, or the CLI asked for something. Opening or resuming a session does not move it, so the list holds still under a click. A session that is still working does not move while its transcript grows, so two working sessions hold their places instead of leapfrogging.
 - **Archived** — Archived sessions sit in a closed "Archived" line at the foot of the list and under each track card. One click opens them, dimmed, in place.

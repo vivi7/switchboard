@@ -298,13 +298,10 @@ function toggleGridView() {
 
 // The session rows in the order the user sees them. In the Projects tab that
 // is the project's own list; following the Sessions sidebar from there jumped
-// between projects in an order nobody could see. With a session open, the
-// list is the project's drawer in the sidebar (projects-view.js).
+// between projects in an order nobody could see. Which list that is, the
+// page's track cards or a drawer in the sidebar, is projects-view.js's call.
 function sessionNavRows() {
-  if (activeTab === 'projects' && !gridViewActive) {
-    if (projectsUi.working) return workingSessionNavRows();
-    return projectViewer.querySelectorAll('.pane-session[data-session-id], .tcard-session[data-session-id]');
-  }
+  if (activeTab === 'projects' && !gridViewActive) return projectsTabNavRows();
   return sidebarContent.querySelectorAll('.session-item[data-session-id]');
 }
 

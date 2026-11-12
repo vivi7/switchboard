@@ -401,6 +401,36 @@ body { display: flex; flex-direction: column; }
   color: #ffffff;
 }
 
+/* Projects tab: the grouping combo sits right after the field, so the
+   field's own buttons move left by its width. */
+#projects-group-select { display: none; }
+#search-bar.with-group { display: flex; align-items: flex-start; gap: 6px; }
+#search-bar.with-group #search-input { flex: 1; min-width: 0; width: auto; }
+#search-bar.with-group #search-clear { right: calc(40px + 74px); }
+#search-bar.with-group #search-titles-toggle { right: calc(22px + 74px); }
+#search-bar.with-group #projects-group-select {
+  display: block;
+  flex: none;
+  width: 68px;
+  align-self: stretch;
+  padding: 0 20px 0 9px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 8px;
+  color: #c0c0d0;
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='8' height='5' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%237a7a90' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+#search-bar.with-group #projects-group-select:hover { border-color: rgba(255,255,255,0.12); }
+#search-bar.with-group #projects-group-select:focus { border-color: rgba(120,130,255,0.5); }
+
 /* ---- Scrollable content ---- */
 #sidebar-content {
   flex: 1;
@@ -4701,25 +4731,13 @@ body { display: flex; flex-direction: column; }
   border-radius: 0 0 8px 8px;
 }
 
-/* Time | Track | State on the left; plan and todo counts and + on the right.
-   On a narrow sidebar the right group wraps under the switch. */
+/* Plan and todo counts on the left, the + for a new session on the right. */
 .pdrawer-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  padding: 0 4px 6px;
-}
-.pdrawer-bar .pane-seg-btn { padding: 2px 7px; }
-.pdrawer-right {
-  display: inline-flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  align-items: center;
   gap: 2px;
-  min-width: 0;
-  max-width: 100%;
-  margin-left: auto;
+  padding: 0 2px 4px;
 }
 .pdrawer-stat {
   padding: 2px 5px;
@@ -4736,16 +4754,32 @@ body { display: flex; flex-direction: column; }
 .pdrawer-stat span { color: #6a6a80; }
 .pdrawer-stat b { color: #d0d0e8; font-weight: 600; }
 .pdrawer-stat:hover { background: rgba(255,255,255,0.06); color: #b0b0c4; }
-.pdrawer-new { width: 20px; height: 20px; margin-left: 4px; }
+.pdrawer-new { width: 20px; height: 20px; margin-left: auto; }
 
-.proj-drawer .pane-search { margin: 0 4px 4px; }
-.proj-drawer .pane-search input { padding: 6px 54px 6px 9px; font-size: 11.5px; }
 .proj-drawer .pane-scroll { overflow: visible; padding-bottom: 2px; }
 .proj-drawer .pane-sec { padding: 8px 8px 3px; }
 .proj-drawer .pane-session { margin: 0; padding: 6px 8px; }
 .proj-drawer .pane-more { padding: 3px 8px 5px; }
 .proj-drawer .pane-empty { padding: 6px 8px 8px; }
 .proj-drawer .pane-scroll > .archived-sec { margin: 0 8px; padding-top: 8px; }
+
+/* "No project": the sessions outside every project, by folder. Folder
+   headers fold like the Sessions tab's and keep the path's own case. */
+.proj-drawer--other { border-top-color: rgba(120,130,255,0.18); border-radius: 8px; padding-top: 2px; }
+.proj-section--other.open { color: #8888a0; }
+.proj-drawer .pane-sec--folder {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: #9090a8;
+  cursor: pointer;
+  gap: 6px;
+}
+.proj-drawer .pane-sec--folder .pane-sec-title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.proj-drawer .pane-sec--folder svg:first-child { flex: none; transition: transform 0.15s; }
+.proj-drawer .pane-sec--folder.open svg:first-child { transform: rotate(90deg); }
+.proj-drawer .pane-sec--folder:hover { color: #c0c0d8; }
 
 .proj-mark {
   display: inline-flex;
@@ -5882,21 +5916,6 @@ body { display: flex; flex-direction: column; }
 
 .ws-tab--session { display: inline-flex; align-items: center; gap: 6px; }
 .ws-tab--session .proj-dot:not(.running, .ready, .attention, .idle) { display: none; }
-
-.pane-search { position: relative; margin: 0 12px 8px; flex-shrink: 0; }
-.pane-search input {
-  box-sizing: border-box; width: 100%; padding: 8px 54px 8px 10px;
-  border: 1px solid rgba(255,255,255,0.08); border-radius: 7px;
-  background: rgba(255,255,255,0.04); color: #c0c0d0; font: inherit; font-size: 12px;
-}
-.pane-search input:focus { outline: none; border-color: rgba(120,130,255,0.5); }
-.pane-search button {
-  position: absolute; top: 0; bottom: 0; padding: 0 5px;
-  background: none; border: 0; color: #7a7a90; cursor: pointer;
-}
-.pane-search-clear { right: 27px; font-size: 16px; }
-.pane-search-titles { right: 5px; font-size: 11px; font-weight: 700; }
-.pane-search button:hover, .pane-search-titles.active { color: #fff; }
 
 .pane-seg {
   display: inline-flex;

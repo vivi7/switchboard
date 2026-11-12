@@ -42,12 +42,19 @@ const projectsUi = {
   // another tab so the Session tab can bring it back.
   navigationByProject: new Map(), // projectId → { tab, sessionId }
   trackByProject: (() => { try { return JSON.parse(sessionStorage.getItem('projects.track') || '{}'); } catch { return {}; } })(),
-  groupBy: (() => { try { return JSON.parse(sessionStorage.getItem('projects.groupBy') || '{}'); } catch { return {}; } })(),
+  // How every drawer groups its sessions: 'time', 'track' or 'state'. One
+  // choice for all projects, set from the combo beside the search field.
+  groupMode: (() => { try { return localStorage.getItem('projects.groupMode') || 'time'; } catch { return 'time'; } })(),
   // projectId → true while its sessions drawer is open in the sidebar. Kept
   // across a reload of the window, not across a restart: drawers start closed.
   expandedProjects: (() => { try { return JSON.parse(sessionStorage.getItem('projects.expanded') || '{}'); } catch { return {}; } })(),
+  // While a search runs, drawers with matching sessions open by themselves.
+  // A chevron click during the search wins over that: projectId → open.
+  searchDrawerOverride: new Map(),
+  // The "No project" row: open, and which of its folders the user folded or unfolded.
+  otherOpen: sessionStorage.getItem('projects.otherOpen') === '1',
+  otherFolders: {}, // projectPath → true (open) / false (closed)
   expandedLists: {},
-  sessionSearchByProject: new Map(),
   // True while the Session tab is on screen: the terminal sits under the page header.
   working: false,
   doneOpen: false,
@@ -177,9 +184,10 @@ function saveProjectsUi() {
   // Tab selection belongs to each project and intentionally resets on restart.
   sessionStorage.removeItem('projects.tab');
   sessionStorage.setItem('projects.track', JSON.stringify(projectsUi.trackByProject));
-  sessionStorage.setItem('projects.groupBy', JSON.stringify(projectsUi.groupBy));
+  try { localStorage.setItem('projects.groupMode', projectsUi.groupMode); } catch {}
   sessionStorage.setItem('projects.archivedOpen', JSON.stringify(projectsUi.archivedOpen));
   sessionStorage.setItem('projects.expanded', JSON.stringify(projectsUi.expandedProjects));
+  if (projectsUi.otherOpen) sessionStorage.setItem('projects.otherOpen', '1'); else sessionStorage.removeItem('projects.otherOpen');
 }
 
 const PROJECT_WORKSPACE_TABS = new Set(['overview', 'session', 'plan', 'files', 'git', 'settings']);
@@ -794,7 +802,7 @@ function updateProjectTaskIndicators(projectPath) {
 
 function buildProjectRow(project) {
   const row = document.createElement('div');
-  const expanded = !!projectsUi.expandedProjects[project.id];
+  const expanded = projectDrawerOpen(project);
   row.className = 'proj-row' + (project.id === projectsUi.selectedProjectId ? ' selected' : '') + (project.status === 'done' ? ' done' : '') + (isProjectSnoozed(project) ? ' snoozed' : '') + (expanded ? ' expanded' : '');
   row.id = 'proj-' + project.id;
   row.dataset.projectId = project.id;
@@ -818,6 +826,8 @@ function renderProjectList() {
   let projects = tree?.projects || [];
 
   const query = searchMatchIds !== null ? (searchInput.value || '').trim().toLowerCase() : '';
+  // A chevron click only overrides the search's own choice while it runs.
+  if (searchMatchIds === null) projectsUi.searchDrawerOverride.clear();
   if (searchMatchIds !== null) {
     projects = projects.filter(p =>
       (query && p.name.toLowerCase().includes(query)) ||
@@ -852,7 +862,7 @@ function renderProjectList() {
   // renderProjectDrawer fills it after the morph (see below).
   const addProject = (project) => {
     list.appendChild(buildProjectRow(project));
-    if (!projectsUi.expandedProjects[project.id]) return;
+    if (!projectDrawerOpen(project)) return;
     const drawer = document.createElement('div');
     drawer.className = 'proj-drawer';
     drawer.id = 'proj-drawer-' + project.id;
@@ -887,6 +897,26 @@ function renderProjectList() {
     if (projectsUi.doneOpen) for (const project of done) addProject(project);
   }
 
+  // Sessions no project claims, under one row at the foot, by folder.
+  const otherCount = sessionsWithoutProject().reduce((n, group) => n + group.sessions.length, 0);
+  if (otherCount) {
+    const open = otherSessionsOpen();
+    const label = document.createElement('div');
+    label.className = 'proj-section proj-section--toggle proj-section--other' + (open ? ' open' : '');
+    label.id = 'proj-sec-other';
+    label.title = 'Sessions that belong to no project, by folder';
+    label.setAttribute('role', 'button');
+    label.setAttribute('aria-expanded', String(open));
+    label.innerHTML = `${PICONS.chevronRight(9)}<span>No project · ${otherCount}</span>`;
+    list.appendChild(label);
+    if (open) {
+      const drawer = document.createElement('div');
+      drawer.className = 'proj-drawer proj-drawer--other';
+      drawer.id = 'proj-drawer-other';
+      list.appendChild(drawer);
+    }
+  }
+
   // morphdom leaves an existing drawer alone. Its session rows carry their
   // click handlers as properties and have no ids, so morphing them would
   // reuse rows by position and leave a row opening the session that used to
@@ -911,6 +941,8 @@ function bindProjectList() {
   if (doneToggle) doneToggle.onclick = () => { projectsUi.doneOpen = !projectsUi.doneOpen; renderProjectList(); };
   const snoozedToggle = projectsContent.querySelector('#proj-sec-snoozed');
   if (snoozedToggle) snoozedToggle.onclick = () => { projectsUi.snoozedOpen = !projectsUi.snoozedOpen; renderProjectList(); };
+  const otherToggle = projectsContent.querySelector('#proj-sec-other');
+  if (otherToggle) otherToggle.onclick = () => toggleOtherSessions();
   projectsContent.querySelectorAll('.proj-row').forEach(row => {
     const project = findTreeProject(row.dataset.projectId);
     if (!project) return;
@@ -923,10 +955,36 @@ function bindProjectList() {
 
 // --- Sidebar: a project's sessions drawer ---
 
+/** The project's sessions that match the sidebar search, active and archived. */
+function projectSearchMatches(project) {
+  if (searchMatchIds === null) return [];
+  const full = (cachedProjectTreeAll?.projects || []).find(p => p.id === project.id) || project;
+  return projectSessionsAll(full)
+    .filter(s => searchMatchIds.has(s.sessionId))
+    .sort((a, b) => sessionEventTime(b) - sessionEventTime(a));
+}
+
+/**
+ * Whether a project's drawer is open: the chevron decides. While a search
+ * runs, a project with matching sessions opens so the matches show, unless
+ * the chevron closed it during that search.
+ */
+function projectDrawerOpen(project) {
+  if (searchMatchIds !== null) {
+    const override = projectsUi.searchDrawerOverride.get(project.id);
+    if (override !== undefined) return override;
+    if (projectSearchMatches(project).length) return true;
+  }
+  return !!projectsUi.expandedProjects[project.id];
+}
+
 /** Open or close the sessions drawer under a project row. */
 function toggleProjectDrawer(projectId) {
-  if (projectsUi.expandedProjects[projectId]) delete projectsUi.expandedProjects[projectId];
+  const project = findTreeProject(projectId);
+  const open = project ? projectDrawerOpen(project) : !!projectsUi.expandedProjects[projectId];
+  if (open) delete projectsUi.expandedProjects[projectId];
   else projectsUi.expandedProjects[projectId] = true;
+  if (searchMatchIds !== null) projectsUi.searchDrawerOverride.set(projectId, !open);
   saveProjectsUi();
   renderProjectList();
 }
@@ -962,61 +1020,36 @@ function projectDrawerStatsHtml(stats) {
 }
 
 /**
- * Everything the old Sessions column showed, for the drawer: the Time | Track
- * | State switch, plan and todo counts, the + for a new session, the search
- * and the grouped list with its archived section.
+ * The drawer under a project row: plan and todo counts with the + for a new
+ * session, then the project's sessions, grouped the way the combo beside the
+ * search field says.
  */
 function buildProjectDrawer(project) {
   const wrap = document.createElement('div');
-  const mode = paneGroupMode(project);
-  const search = projectSessionSearch(project);
-
   const bar = document.createElement('div');
   bar.className = 'pdrawer-bar';
-  bar.innerHTML = `<span class="pane-seg">${GROUP_MODES.map(([m, label]) => `<button type="button" class="pane-seg-btn${m === mode ? ' on' : ''}" data-mode="${m}">${label}</button>`).join('')}</span>` +
-    `<span class="pdrawer-right">${projectDrawerStatsHtml(projectDrawerStats(project))}` +
-    `<button type="button" class="pane-icon-btn pane-icon-btn--primary pdrawer-new" title="New session in the project" aria-label="New session in the project">${PICONS.plus(12)}</button></span>`;
-  bar.querySelectorAll('.pane-seg-btn').forEach(btn => {
-    btn.onclick = () => { projectsUi.groupBy[project.id] = btn.dataset.mode; saveProjectsUi(); refreshProjectDrawer(project.id); };
-  });
+  bar.innerHTML = projectDrawerStatsHtml(projectDrawerStats(project)) +
+    `<button type="button" class="pane-icon-btn pane-icon-btn--primary pdrawer-new" title="New session in the project" aria-label="New session in the project">${PICONS.plus(12)}</button>`;
   bar.querySelectorAll('.pdrawer-stat').forEach(btn => {
     btn.onclick = () => openProjectFileInEditor(findTreeProject(project.id) || project, btn.dataset.file);
   });
   bar.querySelector('.pdrawer-new').onclick = (e) => showNewSessionMenu(findTreeProject(project.id) || project, null, e.currentTarget);
   wrap.appendChild(bar);
-
-  const searchBar = document.createElement('div');
-  searchBar.className = 'pane-search';
-  searchBar.innerHTML = `<input id="pane-search-input-${escapeHtml(project.id)}" type="text" placeholder="Search active & archived…" aria-label="Search sessions in ${escapeHtml(project.name)}" />
-    <button type="button" class="pane-search-clear" aria-label="Clear session search" ${search.query ? '' : 'hidden'}>×</button>
-    <button type="button" class="pane-search-titles${search.titlesOnly ? ' active' : ''}" title="Search titles only" aria-label="Search titles only" aria-pressed="${search.titlesOnly}">Tt</button>`;
-  const input = searchBar.querySelector('input');
-  input.value = search.query;
-  input.dataset.projectId = project.id;
-  input.oninput = () => { search.query = input.value; updateProjectSessionSearch(project, search); };
-  const clear = () => {
-    search.query = '';
-    updateProjectSessionSearch(project, search);
-    document.getElementById('pane-search-input-' + project.id)?.focus();
-  };
-  input.onkeydown = e => { if (e.key === 'Escape') { e.stopPropagation(); clear(); } };
-  searchBar.querySelector('.pane-search-clear').onclick = clear;
-  searchBar.querySelector('.pane-search-titles').onclick = () => {
-    search.titlesOnly = !search.titlesOnly;
-    updateProjectSessionSearch(project, search);
-  };
-  wrap.appendChild(searchBar);
-
   wrap.appendChild(buildSessionPaneList(project));
   return wrap;
 }
 
 /**
- * Fill one drawer. Rebuilding is cheap, but it is skipped when nothing
- * visible changed: a running session refreshes the list every few seconds
- * and the rows must not flicker under the pointer. A rebuild keeps the
- * cursor in the search field.
+ * Put freshly built content in a drawer. Skipped when nothing visible
+ * changed: a running session refreshes the list every few seconds and the
+ * rows must not flicker under the pointer.
  */
+function replaceDrawerContent(el, next) {
+  if (el.innerHTML === next.innerHTML) return false;
+  el.replaceChildren(...next.childNodes);
+  return true;
+}
+
 const drawerFilesLoading = new Set();
 
 function renderProjectDrawer(project, el) {
@@ -1029,16 +1062,7 @@ function renderProjectDrawer(project, el) {
       .finally(() => drawerFilesLoading.delete(project.id))
       .then(() => refreshProjectDrawer(project.id));
   }
-  const next = buildProjectDrawer(project);
-  if (el.innerHTML === next.innerHTML) return;
-  const old = el.querySelector('.pane-search input');
-  const selection = old && old === document.activeElement ? [old.selectionStart, old.selectionEnd] : null;
-  el.replaceChildren(...next.childNodes);
-  if (selection) {
-    const input = el.querySelector('.pane-search input');
-    input.focus({ preventScroll: true });
-    input.setSelectionRange(...selection);
-  }
+  replaceDrawerContent(el, buildProjectDrawer(project));
 }
 
 /** Redraw one project's drawer, if it is open. */
@@ -1049,19 +1073,126 @@ function refreshProjectDrawer(projectId) {
   if (el && project) renderProjectDrawer(project, el);
 }
 
-/** Redraw every open drawer. */
+/** Redraw every open drawer, the "No project" one included. */
 function refreshProjectDrawers() {
   if (!projectsContent) return;
   projectsContent.querySelectorAll('.proj-drawer[data-project-id]').forEach(el => {
     const project = findTreeProject(el.dataset.projectId);
     if (project) renderProjectDrawer(project, el);
   });
+  const other = document.getElementById('proj-drawer-other');
+  if (other) replaceDrawerContent(other, buildOtherSessionsDrawer());
+}
+
+// --- Sidebar: sessions that belong to no project ---
+
+/** A stand-in project for session rows outside every project: no tracks, so no track tag. */
+const NO_PROJECT = { id: null, tracks: [], sessions: [] };
+
+/**
+ * The sessions no project claims, grouped by folder like the Sessions tab:
+ * folders by their latest session, sessions newest first. The Sessions tab's
+ * own folder list is the source, so archived sessions follow its Archive
+ * switch, and a search narrows the list to its matches.
+ */
+function sessionsWithoutProject() {
+  const searching = searchMatchIds !== null;
+  const folders = (searching || showArchived) ? cachedAllProjects : cachedProjects;
+  const groups = [];
+  for (const folder of folders || []) {
+    const sessions = (folder.sessions || [])
+      .filter(s => !projectForSession(s) && (!searching || searchMatchIds.has(s.sessionId)))
+      .sort((a, b) => sessionEventTime(b) - sessionEventTime(a));
+    if (sessions.length) groups.push({ folder, sessions });
+  }
+  return groups.sort((a, b) => sessionEventTime(b.sessions[0]) - sessionEventTime(a.sessions[0]));
+}
+
+/** The "No project" row is open by its own toggle, or while a search finds sessions under it. */
+function otherSessionsOpen() {
+  if (searchMatchIds !== null) {
+    const override = projectsUi.searchDrawerOverride.get('other');
+    return override !== undefined ? override : true;
+  }
+  return projectsUi.otherOpen;
+}
+
+function toggleOtherSessions() {
+  const open = otherSessionsOpen();
+  projectsUi.otherOpen = !open;
+  if (searchMatchIds !== null) projectsUi.searchDrawerOverride.set('other', !open);
+  saveProjectsUi();
+  renderProjectList();
 }
 
 /**
- * Cmd+Shift+[ / ] while a session is open: the order of its project's
- * drawer, or the same grouping when the drawer is closed.
+ * A folder starts open unless its newest session is older than the Sessions
+ * tab's age limit, the same rule that folds a stale folder there. A search
+ * opens every folder with a match.
  */
+function otherFolderOpen(folder, sessions) {
+  if (searchMatchIds !== null) return true;
+  const chosen = projectsUi.otherFolders[folder.projectPath];
+  if (chosen !== undefined) return chosen;
+  const newest = sessionEventTime(sessions[0]);
+  return !newest || Date.now() - newest <= sessionMaxAgeDays * 86400000;
+}
+
+function buildOtherSessionsDrawer() {
+  const wrap = document.createElement('div');
+  const scroll = document.createElement('div');
+  scroll.className = 'pane-scroll';
+  const searching = searchMatchIds !== null;
+  for (const { folder, sessions } of sessionsWithoutProject()) {
+    const open = otherFolderOpen(folder, sessions);
+    const head = document.createElement('div');
+    head.className = 'pane-sec pane-sec--folder' + (open ? ' open' : '');
+    head.title = folder.projectPath;
+    head.innerHTML = `${PICONS.chevronRight(9)}<span class="pane-sec-title">${escapeHtml(shortProjectPath(folder.projectPath))}</span><span class="pane-sec-count">${sessions.length}</span>` +
+      `<span class="ws-flex"></span><button type="button" class="pane-icon-btn pane-sec-plus" title="New session in this folder" aria-label="New session in this folder">${PICONS.plus(11)}</button>`;
+    head.onclick = () => {
+      projectsUi.otherFolders[folder.projectPath] = !open;
+      refreshProjectDrawers();
+    };
+    head.querySelector('.pane-sec-plus').onclick = (e) => { e.stopPropagation(); showNewSessionPopover(folder, e.currentTarget); };
+    scroll.appendChild(head);
+    if (!open) continue;
+
+    const key = `other:${folder.projectPath}`;
+    const limit = searching || projectsUi.expandedLists[key] ? Infinity : visibleSessionCount;
+    for (const s of sessions.slice(0, limit)) scroll.appendChild(buildSessionRow(NO_PROJECT, s, {
+      showTrack: false,
+      className: s.archived ? 'pane-session pane-session--archived' : 'pane-session',
+    }));
+    if (sessions.length > limit) {
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'pane-more';
+      more.textContent = `+ ${sessions.length - limit} older`;
+      more.onclick = () => { projectsUi.expandedLists[key] = true; refreshProjectDrawers(); };
+      scroll.appendChild(more);
+    }
+  }
+  wrap.appendChild(scroll);
+  return wrap;
+}
+
+/**
+ * Cmd+Shift+[ / ] in the Projects tab: the rows the user sees around the
+ * session on screen. With a session open, its project's drawer (or the same
+ * grouping when the drawer is closed); for a session outside every project,
+ * the "No project" list; otherwise the page's track cards.
+ */
+function projectsTabNavRows() {
+  if (projectsUi.working) return workingSessionNavRows();
+  const active = activeSessionId ? sessionMap.get(activeSessionId) : null;
+  if (active && !projectForSession(active) && projectViewer.style.display === 'none') {
+    const other = document.getElementById('proj-drawer-other');
+    return other ? [...other.querySelectorAll('.pane-session[data-session-id]')] : [];
+  }
+  return [...projectViewer.querySelectorAll('.pane-session[data-session-id], .tcard-session[data-session-id]')];
+}
+
 function workingSessionNavRows() {
   const project = selectedProject();
   if (!project) return [];
@@ -1662,10 +1793,10 @@ function buildTrackCard(project, track) {
  */
 function showTrackInDrawer(project, key) {
   projectsUi.trackByProject[project.id] = key;
-  projectsUi.groupBy[project.id] = 'track';
   projectsUi.expandedLists[`${project.id}:track:${key}`] = true;
   projectsUi.expandedProjects[project.id] = true;
   saveProjectsUi();
+  setSessionGroupMode('track');
   renderProjectList();
   refreshProjectDrawer(project.id);
   const drawer = document.getElementById('proj-drawer-' + project.id);
@@ -2839,9 +2970,29 @@ function trackCwdLabel(project, track) {
 const PANE_GROUP_LIMIT = 8;
 const GROUP_MODES = [['time', 'Time'], ['track', 'Track'], ['state', 'State']];
 
-function paneGroupMode(project) {
-  const mode = projectsUi.groupBy[project.id];
+/** The grouping every drawer uses. The argument is kept for callers that think per project. */
+function paneGroupMode(_project) {
+  const mode = projectsUi.groupMode;
   return GROUP_MODES.some(([m]) => m === mode) ? mode : 'time';
+}
+
+/** Change the grouping of every drawer, from the combo beside the search field. */
+function setSessionGroupMode(mode) {
+  if (!GROUP_MODES.some(([m]) => m === mode)) return;
+  projectsUi.groupMode = mode;
+  saveProjectsUi();
+  const select = document.getElementById('projects-group-select');
+  if (select && select.value !== mode) select.value = mode;
+  refreshProjectDrawers();
+}
+
+{
+  // The grouping combo beside the search field (index.html), shown on the Projects tab.
+  const select = document.getElementById('projects-group-select');
+  if (select) {
+    select.value = paneGroupMode(null);
+    select.onchange = () => setSessionGroupMode(select.value);
+  }
 }
 
 function startOfDay(date) {
@@ -2908,65 +3059,20 @@ function groupSessions(project, mode) {
   ].filter(g => g.sessions.length);
 }
 
-/** Each drawer's own session search: query, titles-only switch and the last results. */
-function projectSessionSearch(project) {
-  if (!projectsUi.sessionSearchByProject.has(project.id)) {
-    projectsUi.sessionSearchByProject.set(project.id, {
-      query: '', displayQuery: '', titlesOnly: searchTitlesOnly, ids: new Set(), pending: false, error: false, version: 0, timer: null,
-    });
-  }
-  return projectsUi.sessionSearchByProject.get(project.id);
-}
-
-function updateProjectSessionSearch(project, state) {
-  clearTimeout(state.timer);
-  const version = ++state.version;
-  const query = state.query.trim();
-  state.pending = !!query && !state.titlesOnly;
-  state.error = false;
-  // Keep the last completed query and its matches together while the next
-  // request is pending. Background drawer redraws must use that snapshot too.
-  if (!state.pending) {
-    state.ids = new Set();
-    state.displayQuery = query;
-  }
-  // The drawer keeps the last completed results on screen while a query is
-  // pending (it reads displayQuery and ids), so a redraw is always safe.
-  const redraw = () => refreshProjectDrawer(project.id);
-  redraw();
-  if (!query || state.titlesOnly) return;
-  state.timer = setTimeout(async () => {
-    try {
-      const full = cachedProjectTreeAll?.projects.find(p => p.id === project.id) || project;
-      const ids = projectSessionsAll(full).map(s => s.sessionId);
-      const results = ids.length ? await window.api.searchSessionIds(query, ids) : [];
-      if (state.version !== version) return;
-      state.ids = new Set(results);
-      state.displayQuery = query;
-    } catch {
-      if (state.version !== version) return;
-      state.error = true;
-    }
-    state.pending = false;
-    redraw();
-  }, 100);
-}
-
+/**
+ * A project's sessions as one list, grouped by time, track or state. While
+ * the sidebar search runs, only the project's matching sessions, active and
+ * archived. A project found by its name alone keeps its whole list.
+ */
 function buildSessionPaneList(project) {
-  const search = projectSessionSearch(project);
-  const searching = !!search.displayQuery;
+  const matches = projectSearchMatches(project);
+  const searching = matches.length > 0;
   const mode = paneGroupMode(project);
   const expanded = projectsUi.expandedLists;
   const scroll = document.createElement('div');
   scroll.className = 'pane-scroll';
   let groups = groupSessions(project, mode);
   if (searching) {
-    const full = cachedProjectTreeAll?.projects.find(p => p.id === project.id) || project;
-    const query = search.displayQuery.toLowerCase();
-    const matches = projectSessionsAll(full).filter(s => search.ids.has(s.sessionId) ||
-      (!search.titlesOnly && s.formerTrackName?.toLowerCase().includes(query)) ||
-      [s.name, s.aiTitle, s.summary].some(title => title?.toLowerCase().includes(query)))
-      .sort((a, b) => sessionEventTime(b) - sessionEventTime(a));
     groups = [
       { key: 'matches', title: 'Active', sessions: matches.filter(s => !s.archived), unlimited: true },
       { key: 'archived-matches', title: 'Archived', sessions: matches.filter(s => s.archived), unlimited: true },
@@ -2975,9 +3081,7 @@ function buildSessionPaneList(project) {
   if (!groups.length) {
     const none = document.createElement('div');
     none.className = 'pane-empty';
-    none.textContent = searching
-      ? (search.error ? 'Search failed. Try again.' : 'No matching sessions in this project.')
-      : 'No sessions yet. Start one from the + above.';
+    none.textContent = 'No sessions yet. Start one from the + above.';
     scroll.appendChild(none);
   }
   for (const group of groups) {
